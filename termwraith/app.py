@@ -6,8 +6,8 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.containers import Horizontal
-from textual.widgets import Button, Footer, Header, Input, Label, OptionList, Switch, TabbedContent, TabPane
-from textual.widgets.option_list import Option
+from textual.widgets import Button, Footer, Header, Input, Label, Switch, TabbedContent, TabPane, Tree
+from textual.widgets.tree import TreeNode
 
 from .store import Config, Session, load_config, load_sessions, parse_target, write_config, write_sessions
 from .terminal import SSHTerminal
@@ -42,9 +42,10 @@ class HostKeyScreen(ModalScreen[bool]):
 class SessionForm(ModalScreen[Session | None]):
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
-    def __init__(self, session: Session | None = None) -> None:
+    def __init__(self, session: Session | None = None, folder: str = "") -> None:
         super().__init__()
         self._session = session
+        self._folder = folder
 
     def compose(self) -> ComposeResult:
         s = self._session
@@ -58,6 +59,11 @@ class SessionForm(ModalScreen[Session | None]):
                 value=(s.key or "") if s else "",
                 placeholder="key file (optional, e.g. ~/.ssh/id_ed25519)",
                 id="key",
+            )
+            yield Input(
+                value=s.folder if s else self._folder,
+                placeholder="folder, e.g. Clients/Acme (optional)",
+                id="folder",
             )
             with Horizontal(classes="buttons"):
                 yield Button("Save", variant="success", id="save")
@@ -77,7 +83,8 @@ class SessionForm(ModalScreen[Session | None]):
         name = self.query_one("#name", Input).value.strip() or f"{user}@{host}"
         key_text = self.query_one("#key", Input).value.strip()
         key = str(Path(key_text).expanduser()) if key_text else None
-        self.dismiss(Session(name=name, host=host, user=user, port=int(port_text), key=key))
+        folder = "/".join(part.strip() for part in self.query_one("#folder", Input).value.split("/") if part.strip())
+        self.dismiss(Session(name=name, host=host, user=user, port=int(port_text), key=key, folder=folder))
 
     @on(Button.Pressed, "#cancel")
     def _cancel_pressed(self) -> None:
@@ -133,7 +140,7 @@ class Picker(ModalScreen[Session | None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="box"):
             yield Label("Saved sessions")
-            yield OptionList(*self._options(), id="saved")
+            yield Tree("Saved sessions", id="saved")
             with Horizontal(classes="buttons"):
                 yield Button("New", variant="primary", id="new")
                 yield Button("Edit", id="edit")
@@ -142,21 +149,45 @@ class Picker(ModalScreen[Session | None]):
             yield Label("Quick connect  user@host[:port]")
             yield Input(placeholder="deploy@10.0.0.5:2222", id="quick")
 
-    def _options(self) -> list[Option]:
-        return [Option(f"{s.name}  ({s.user}@{s.host}:{s.port})", id=str(i)) for i, s in enumerate(self._sessions)]
+    def on_mount(self) -> None:
+        self._reload()
 
     def _reload(self) -> None:
-        saved = self.query_one("#saved", OptionList)
-        saved.clear_options()
-        saved.add_options(self._options())
+        tree = self.query_one("#saved", Tree)
+        tree.clear()
+        tree.root.expand()
+        folders: dict[str, TreeNode] = {"": tree.root}
+        ordered = sorted(enumerate(self._sessions), key=lambda pair: (pair[1].folder.lower(), pair[1].name.lower()))
+        for index, session in ordered:
+            parent = self._folder_node(folders, session.folder)
+            parent.add_leaf(f"{session.name}  ({session.user}@{session.host}:{session.port})", data=index)
 
-    @on(OptionList.OptionSelected)
-    def _picked(self, event: OptionList.OptionSelected) -> None:
-        self.dismiss(self._sessions[int(event.option.id)])
+    def _folder_node(self, folders: dict[str, TreeNode], path: str) -> TreeNode:
+        if path not in folders:
+            parent_path, _, leaf = path.rpartition("/")
+            folders[path] = self._folder_node(folders, parent_path).add(leaf, data=path, expand=True)
+        return folders[path]
+
+    def _selected_index(self) -> int | None:
+        node = self.query_one("#saved", Tree).cursor_node
+        return node.data if node is not None and isinstance(node.data, int) else None
+
+    def _cursor_folder(self) -> str:
+        node = self.query_one("#saved", Tree).cursor_node
+        if node is None or node.data is None:
+            return ""
+        if isinstance(node.data, str):
+            return node.data
+        return self._sessions[node.data].folder
+
+    @on(Tree.NodeSelected)
+    def _picked(self, event: Tree.NodeSelected) -> None:
+        if isinstance(event.node.data, int):
+            self.dismiss(self._sessions[event.node.data])
 
     @on(Button.Pressed, "#new")
     def _new(self) -> None:
-        self.app.push_screen(SessionForm(), self._add)
+        self.app.push_screen(SessionForm(folder=self._cursor_folder()), self._add)
 
     def _add(self, session: Session | None) -> None:
         if session is None:
@@ -167,7 +198,7 @@ class Picker(ModalScreen[Session | None]):
 
     @on(Button.Pressed, "#edit")
     def _edit(self) -> None:
-        index = self.query_one("#saved", OptionList).highlighted
+        index = self._selected_index()
         if index is None:
             return
         self.app.push_screen(SessionForm(self._sessions[index]), lambda session: self._replace(index, session))
@@ -185,7 +216,7 @@ class Picker(ModalScreen[Session | None]):
 
     @on(Button.Pressed, "#delete")
     def _delete(self) -> None:
-        index = self.query_one("#saved", OptionList).highlighted
+        index = self._selected_index()
         if index is None:
             return
         del self._sessions[index]
@@ -237,7 +268,7 @@ class TermWraith(App):
         background: $surface;
         padding: 1 2;
     }
-    OptionList { height: auto; max-height: 12; }
+    #saved { height: 12; }
     .buttons { height: auto; margin-top: 1; }
     .buttons Button { margin-right: 1; }
     .row { height: auto; }

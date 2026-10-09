@@ -17,6 +17,7 @@ class Session:
     user: str
     port: int = 22
     key: str | None = None
+    folder: str = ""
 
 
 def load_sessions(path: Path = SESSIONS_FILE) -> list[Session]:
