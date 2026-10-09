@@ -1,3 +1,4 @@
 textual>=8
 asyncssh>=2.14
 pyte>=0.8
+cryptography>=42
