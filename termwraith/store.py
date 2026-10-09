@@ -1,7 +1,7 @@
 import getpass
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 SESSIONS_FILE = Path(os.environ.get("TERMWRAITH_SESSIONS", Path.home() / ".config/termwraith/sessions.json"))
@@ -20,6 +20,11 @@ def load_sessions(path: Path = SESSIONS_FILE) -> list[Session]:
     if not path.exists():
         return []
     return [Session(**entry) for entry in json.loads(path.read_text())]
+
+
+def write_sessions(sessions: list[Session], path: Path = SESSIONS_FILE) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps([asdict(s) for s in sessions], indent=2) + "\n")
 
 
 KNOWN_HOSTS_FILE = SESSIONS_FILE.parent / "known_hosts"

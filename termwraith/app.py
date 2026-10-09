@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -7,7 +9,7 @@ from textual.containers import Horizontal
 from textual.widgets import Button, Footer, Header, Input, Label, OptionList, TabbedContent, TabPane
 from textual.widgets.option_list import Option
 
-from .store import Session, load_sessions, parse_target
+from .store import Session, load_sessions, parse_target, write_sessions
 from .terminal import SSHTerminal
 
 
@@ -37,6 +39,45 @@ class HostKeyScreen(ModalScreen[bool]):
         self.dismiss(False)
 
 
+class SessionForm(ModalScreen[Session | None]):
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="box"):
+            yield Label("New saved session")
+            yield Input(placeholder="name (optional)", id="name")
+            yield Input(placeholder="host, e.g. 10.0.0.5", id="host")
+            yield Input(placeholder="user", id="user")
+            yield Input(value="22", placeholder="port", id="port")
+            yield Input(placeholder="key file (optional, e.g. ~/.ssh/id_ed25519)", id="key")
+            with Horizontal(classes="buttons"):
+                yield Button("Save", variant="success", id="save")
+                yield Button("Cancel", id="cancel")
+
+    @on(Button.Pressed, "#save")
+    def _save(self) -> None:
+        host = self.query_one("#host", Input).value.strip()
+        user = self.query_one("#user", Input).value.strip()
+        port_text = self.query_one("#port", Input).value.strip() or "22"
+        if not host or not user:
+            self.notify("Host and user are required", severity="error")
+            return
+        if not port_text.isdigit() or not 0 < int(port_text) < 65536:
+            self.notify("Port must be between 1 and 65535", severity="error")
+            return
+        name = self.query_one("#name", Input).value.strip() or f"{user}@{host}"
+        key_text = self.query_one("#key", Input).value.strip()
+        key = str(Path(key_text).expanduser()) if key_text else None
+        self.dismiss(Session(name=name, host=host, user=user, port=int(port_text), key=key))
+
+    @on(Button.Pressed, "#cancel")
+    def _cancel_pressed(self) -> None:
+        self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class Picker(ModalScreen[Session | None]):
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
@@ -47,15 +88,44 @@ class Picker(ModalScreen[Session | None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="box"):
             yield Label("Saved sessions")
-            yield OptionList(
-                *(Option(f"{s.name}  ({s.user}@{s.host}:{s.port})", id=str(i)) for i, s in enumerate(self._sessions))
-            )
+            yield OptionList(*self._options(), id="saved")
+            with Horizontal(classes="buttons"):
+                yield Button("New session", variant="primary", id="new")
+                yield Button("Delete selected", variant="error", id="delete")
             yield Label("Quick connect  user@host[:port]")
             yield Input(placeholder="deploy@10.0.0.5:2222", id="quick")
+
+    def _options(self) -> list[Option]:
+        return [Option(f"{s.name}  ({s.user}@{s.host}:{s.port})", id=str(i)) for i, s in enumerate(self._sessions)]
+
+    def _reload(self) -> None:
+        saved = self.query_one("#saved", OptionList)
+        saved.clear_options()
+        saved.add_options(self._options())
 
     @on(OptionList.OptionSelected)
     def _picked(self, event: OptionList.OptionSelected) -> None:
         self.dismiss(self._sessions[int(event.option.id)])
+
+    @on(Button.Pressed, "#new")
+    def _new(self) -> None:
+        self.app.push_screen(SessionForm(), self._add)
+
+    def _add(self, session: Session | None) -> None:
+        if session is None:
+            return
+        self._sessions.append(session)
+        write_sessions(self._sessions)
+        self._reload()
+
+    @on(Button.Pressed, "#delete")
+    def _delete(self) -> None:
+        index = self.query_one("#saved", OptionList).highlighted
+        if index is None:
+            return
+        del self._sessions[index]
+        write_sessions(self._sessions)
+        self._reload()
 
     @on(Input.Submitted)
     def _quick(self, event: Input.Submitted) -> None:
@@ -105,7 +175,7 @@ class TermWraith(App):
     OptionList { height: auto; max-height: 12; }
     .buttons { height: auto; margin-top: 1; }
     .buttons Button { margin-right: 2; }
-    Picker, PasswordPrompt, HostKeyScreen { align: center middle; }
+    Picker, PasswordPrompt, HostKeyScreen, SessionForm { align: center middle; }
     TabbedContent { height: 1fr; }
     TabPane { padding: 0; }
     """
