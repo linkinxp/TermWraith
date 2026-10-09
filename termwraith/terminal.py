@@ -24,7 +24,7 @@ from .store import (
 )
 from .vault import VaultError, load_passwords, save_passwords
 
-APP_KEYS = {"f2", "f3", "f6", "f7", "f10", "ctrl+b", "ctrl+pagedown", "ctrl+pageup"}
+APP_KEYS = {"f2", "f3", "f6", "f7", "f8", "f10", "ctrl+b", "ctrl+f", "ctrl+pagedown", "ctrl+pageup"}
 SPECIAL_KEYS = {
     "enter": "\r",
     "tab": "\t",
@@ -41,6 +41,8 @@ CURSOR_KEYS = {"up": "A", "down": "B", "right": "C", "left": "D", "home": "H", "
 DECCKM = 1 << 5
 RECONNECT_DELAY = 5
 KEEPALIVE_SECONDS = 30
+SCROLLBACK = 5000
+WHEEL_LINES = 3
 
 
 def _color(name: str) -> str | None:
@@ -88,13 +90,19 @@ class SSHTerminal(Widget, can_focus=True):
         self._fg = config.fg
         self._bg = config.bg
         self._macros = {m["key"]: codecs.decode(m["send"], "unicode_escape") for m in config.macros}
-        self.buffer = pyte.Screen(80, 24)
+        self.buffer = pyte.HistoryScreen(80, 24, history=SCROLLBACK)
         self._stream = pyte.ByteStream(self.buffer)
         self._conn: asyncssh.SSHClientConnection | None = None
         self._jump: asyncssh.SSHClientConnection | None = None
         self._proc: asyncssh.SSHClientProcess | None = None
         self._password: str | None = None
         self._closing = False
+        self._offset = 0
+        self._sel: tuple[tuple[int, int], tuple[int, int]] | None = None
+        self._dragging = False
+        self._hits: set[tuple[int, int]] = set()
+        self._matches: list[tuple[int, int]] = []
+        self._match = -1
 
     def on_mount(self) -> None:
         self.connect()
@@ -281,6 +289,12 @@ class SSHTerminal(Widget, can_focus=True):
         self._send(event.text)
 
     def on_key(self, event: events.Key) -> None:
+        if event.key in ("shift+pageup", "shift+pagedown"):
+            event.stop()
+            event.prevent_default()
+            step = self.buffer.lines if event.key == "shift+pageup" else -self.buffer.lines
+            self._scroll(step)
+            return
         if event.key in self._macros:
             event.stop()
             event.prevent_default()
@@ -299,6 +313,7 @@ class SSHTerminal(Widget, can_focus=True):
         terminals = self.screen.query(SSHTerminal) if self.app.broadcast else [self]
         for term in terminals:
             if term._proc is not None:
+                term._offset = 0
                 term._proc.stdin.write(data.encode())
 
     def _key_data(self, event: events.Key) -> str | None:
@@ -314,20 +329,120 @@ class SSHTerminal(Widget, can_focus=True):
             return event.character
         return None
 
+    def _total(self) -> int:
+        return len(self.buffer.history.top) + self.buffer.lines
+
+    def _row(self, v: int):
+        top = self.buffer.history.top
+        if v < len(top):
+            return top[v]
+        return self.buffer.buffer[v - len(top)]
+
+    def _scroll(self, step: int) -> None:
+        self._offset = max(0, min(len(self.buffer.history.top), self._offset + step))
+        self.refresh()
+
+    def _cell_at(self, event: events.MouseEvent) -> tuple[int, int]:
+        v = len(self.buffer.history.top) - self._offset + event.y
+        v = max(0, min(self._total() - 1, v))
+        return v, max(0, min(self.buffer.columns - 1, event.x))
+
+    def on_mouse_scroll_up(self, event: events.MouseScrollUp) -> None:
+        self._scroll(WHEEL_LINES)
+
+    def on_mouse_scroll_down(self, event: events.MouseScrollDown) -> None:
+        self._scroll(-WHEEL_LINES)
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        if event.button != 1:
+            return
+        self._dragging = True
+        self.capture_mouse()
+        cell = self._cell_at(event)
+        self._sel = (cell, cell)
+        self.refresh()
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        if self._dragging and self._sel is not None:
+            self._sel = (self._sel[0], self._cell_at(event))
+            self.refresh()
+
+    def on_mouse_up(self, event: events.MouseUp) -> None:
+        if not self._dragging:
+            return
+        self._dragging = False
+        self.release_mouse()
+        anchor, end = self._sel[0], self._cell_at(event)
+        self._sel = (min(anchor, end), max(anchor, end))
+        if self._sel[0] == self._sel[1]:
+            self._sel = None
+            self.refresh()
+            return
+        text = self._selected_text()
+        self.app.copy_to_clipboard(text)
+        self.app.notify(f"copied {len(text)} characters")
+        self.refresh()
+
+    def _selected_text(self) -> str:
+        (first_v, first_x), (last_v, last_x) = self._sel
+        lines = []
+        for v in range(first_v, last_v + 1):
+            row = self._row(v)
+            start = first_x if v == first_v else 0
+            end = last_x if v == last_v else self.buffer.columns - 1
+            lines.append("".join(row[x].data for x in range(start, end + 1)).rstrip())
+        return "\n".join(lines)
+
+    def search(self, query: str) -> int:
+        q = query.lower()
+        self._matches = []
+        self._hits = set()
+        if q:
+            cols = self.buffer.columns
+            for v in range(self._total()):
+                row = self._row(v)
+                text = "".join(row[x].data for x in range(cols)).lower()
+                start = text.find(q)
+                while start != -1:
+                    self._matches.append((v, start))
+                    self._hits.update((v, x) for x in range(start, start + len(q)))
+                    start = text.find(q, start + 1)
+        self._match = 0 if self._matches else -1
+        if self._matches:
+            self._reveal()
+        self.refresh()
+        return len(self._matches)
+
+    def search_next(self) -> None:
+        if self._matches:
+            self._match = (self._match + 1) % len(self._matches)
+            self._reveal()
+
+    def _reveal(self) -> None:
+        v, _ = self._matches[self._match]
+        top = len(self.buffer.history.top)
+        self._offset = max(0, min(top, top - (v - self.buffer.lines // 2)))
+        self.refresh()
+
     def render(self) -> Text:
         screen = self.buffer
         cursor = screen.cursor
-        show_cursor = self.has_focus and not cursor.hidden
+        top = len(screen.history.top)
+        first = top - self._offset
+        show_cursor = self.has_focus and self._offset == 0 and not cursor.hidden
+        sel = self._sel
         text = Text(no_wrap=True, overflow="crop", end="")
-        for y in range(screen.lines):
-            row = screen.buffer[y]
+        for r in range(screen.lines):
+            v = first + r
+            row = self._row(v)
             for x in range(screen.columns):
                 ch = row[x]
-                at_cursor = show_cursor and x == cursor.x and y == cursor.y
+                at_cursor = show_cursor and x == cursor.x and r == cursor.y
+                selected = sel is not None and sel[0] <= (v, x) <= sel[1]
                 fg = self._fg if ch.fg == "default" else ch.fg
                 bg = self._bg if ch.bg == "default" else ch.bg
-                style = _style(fg, bg, ch.bold, ch.italics, ch.underscore, ch.reverse != at_cursor)
-                text.append(ch.data, style)
-            if y < screen.lines - 1:
+                invert = ch.reverse != (at_cursor or selected or (v, x) in self._hits)
+                text.append(ch.data, _style(fg, bg, ch.bold, ch.italics, ch.underscore, invert))
+            if r < screen.lines - 1:
                 text.append("\n")
         return text

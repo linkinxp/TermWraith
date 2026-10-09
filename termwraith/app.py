@@ -456,6 +456,8 @@ class TermWraith(App):
         Binding("f3", "close_tab", "Close tab"),
         Binding("f6", "split", "Split"),
         Binding("f7", "rename", "Rename"),
+        Binding("f8", "search_next", "Next match"),
+        Binding("ctrl+f", "search", "Search"),
         Binding("ctrl+b", "broadcast", "Broadcast"),
         Binding("ctrl+pagedown", "cycle_tab(1)", "Next tab", show=False),
         Binding("ctrl+pageup", "cycle_tab(-1)", "Prev tab", show=False),
@@ -551,6 +553,28 @@ class TermWraith(App):
         if not name or not name.strip():
             return
         self.query_one(TabbedContent).get_tab(pane_id).label = name.strip()
+
+    def _focused_term(self) -> SSHTerminal | None:
+        if isinstance(self.focused, SSHTerminal):
+            return self.focused
+        pane = self.query_one(TabbedContent).active_pane
+        return next(iter(pane.query(SSHTerminal)), None) if pane is not None else None
+
+    def action_search(self) -> None:
+        term = self._focused_term()
+        if term is not None:
+            self.push_screen(TextPrompt("Search scrollback and screen"), lambda query: self._run_search(term, query))
+
+    def _run_search(self, term: SSHTerminal, query: str | None) -> None:
+        if not query:
+            return
+        count = term.search(query)
+        self.notify(f"{count} match{'es' if count != 1 else ''}" if count else "no matches")
+
+    def action_search_next(self) -> None:
+        term = self._focused_term()
+        if term is not None:
+            term.search_next()
 
     def action_broadcast(self) -> None:
         self.broadcast = not self.broadcast
