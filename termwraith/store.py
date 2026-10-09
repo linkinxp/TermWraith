@@ -1,10 +1,13 @@
 import getpass
 import json
 import os
+import re
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 
 SESSIONS_FILE = Path(os.environ.get("TERMWRAITH_SESSIONS", Path.home() / ".config/termwraith/sessions.json"))
+CONFIG_FILE = Path(os.environ.get("TERMWRAITH_CONFIG", Path.home() / ".config/termwraith/config.json"))
 
 
 @dataclass(frozen=True)
@@ -25,6 +28,30 @@ def load_sessions(path: Path = SESSIONS_FILE) -> list[Session]:
 def write_sessions(sessions: list[Session], path: Path = SESSIONS_FILE) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps([asdict(s) for s in sessions], indent=2) + "\n")
+
+
+@dataclass(frozen=True)
+class Config:
+    log_enabled: bool = False
+    log_dir: str = str(Path.home() / ".local/state/termwraith/logs")
+
+
+def load_config(path: Path = CONFIG_FILE) -> Config:
+    if not path.exists():
+        return Config()
+    data = json.loads(path.read_text())
+    return Config(**{key: data[key] for key in ("log_enabled", "log_dir") if key in data})
+
+
+def write_config(config: Config, path: Path = CONFIG_FILE) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(asdict(config), indent=2) + "\n")
+
+
+def log_path(config: Config, session_name: str) -> Path:
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", session_name)
+    return Path(config.log_dir).expanduser() / f"{safe_name}-{stamp}.log"
 
 
 KNOWN_HOSTS_FILE = SESSIONS_FILE.parent / "known_hosts"

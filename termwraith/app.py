@@ -6,10 +6,10 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.containers import Horizontal
-from textual.widgets import Button, Footer, Header, Input, Label, OptionList, TabbedContent, TabPane
+from textual.widgets import Button, Footer, Header, Input, Label, OptionList, Switch, TabbedContent, TabPane
 from textual.widgets.option_list import Option
 
-from .store import Session, load_sessions, parse_target, write_sessions
+from .store import Config, Session, load_config, load_sessions, parse_target, write_config, write_sessions
 from .terminal import SSHTerminal
 
 
@@ -42,14 +42,23 @@ class HostKeyScreen(ModalScreen[bool]):
 class SessionForm(ModalScreen[Session | None]):
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
+    def __init__(self, session: Session | None = None) -> None:
+        super().__init__()
+        self._session = session
+
     def compose(self) -> ComposeResult:
+        s = self._session
         with Vertical(id="box"):
-            yield Label("New saved session")
-            yield Input(placeholder="name (optional)", id="name")
-            yield Input(placeholder="host, e.g. 10.0.0.5", id="host")
-            yield Input(placeholder="user", id="user")
-            yield Input(value="22", placeholder="port", id="port")
-            yield Input(placeholder="key file (optional, e.g. ~/.ssh/id_ed25519)", id="key")
+            yield Label("Edit saved session" if s else "New saved session")
+            yield Input(value=s.name if s else "", placeholder="name (optional)", id="name")
+            yield Input(value=s.host if s else "", placeholder="host, e.g. 10.0.0.5", id="host")
+            yield Input(value=s.user if s else "", placeholder="user", id="user")
+            yield Input(value=str(s.port) if s else "22", placeholder="port", id="port")
+            yield Input(
+                value=(s.key or "") if s else "",
+                placeholder="key file (optional, e.g. ~/.ssh/id_ed25519)",
+                id="key",
+            )
             with Horizontal(classes="buttons"):
                 yield Button("Save", variant="success", id="save")
                 yield Button("Cancel", id="cancel")
@@ -78,6 +87,42 @@ class SessionForm(ModalScreen[Session | None]):
         self.dismiss(None)
 
 
+class SettingsScreen(ModalScreen[None]):
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, config: Config) -> None:
+        super().__init__()
+        self._config = config
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="box"):
+            yield Label("Settings")
+            with Horizontal(classes="row"):
+                yield Switch(value=self._config.log_enabled, id="log-enabled")
+                yield Label("Log session output")
+            yield Label("Log directory")
+            yield Input(value=self._config.log_dir, id="log-dir")
+            with Horizontal(classes="buttons"):
+                yield Button("Save", variant="success", id="save")
+                yield Button("Cancel", id="cancel")
+
+    @on(Button.Pressed, "#save")
+    def _save(self) -> None:
+        directory = self.query_one("#log-dir", Input).value.strip()
+        if not directory:
+            self.notify("Log directory is required", severity="error")
+            return
+        write_config(Config(log_enabled=self.query_one("#log-enabled", Switch).value, log_dir=directory))
+        self.dismiss(None)
+
+    @on(Button.Pressed, "#cancel")
+    def _cancel_pressed(self) -> None:
+        self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class Picker(ModalScreen[Session | None]):
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
@@ -90,8 +135,10 @@ class Picker(ModalScreen[Session | None]):
             yield Label("Saved sessions")
             yield OptionList(*self._options(), id="saved")
             with Horizontal(classes="buttons"):
-                yield Button("New session", variant="primary", id="new")
-                yield Button("Delete selected", variant="error", id="delete")
+                yield Button("New", variant="primary", id="new")
+                yield Button("Edit", id="edit")
+                yield Button("Delete", variant="error", id="delete")
+                yield Button("Settings", id="settings")
             yield Label("Quick connect  user@host[:port]")
             yield Input(placeholder="deploy@10.0.0.5:2222", id="quick")
 
@@ -117,6 +164,24 @@ class Picker(ModalScreen[Session | None]):
         self._sessions.append(session)
         write_sessions(self._sessions)
         self._reload()
+
+    @on(Button.Pressed, "#edit")
+    def _edit(self) -> None:
+        index = self.query_one("#saved", OptionList).highlighted
+        if index is None:
+            return
+        self.app.push_screen(SessionForm(self._sessions[index]), lambda session: self._replace(index, session))
+
+    def _replace(self, index: int, session: Session | None) -> None:
+        if session is None:
+            return
+        self._sessions[index] = session
+        write_sessions(self._sessions)
+        self._reload()
+
+    @on(Button.Pressed, "#settings")
+    def _settings(self) -> None:
+        self.app.push_screen(SettingsScreen(load_config()))
 
     @on(Button.Pressed, "#delete")
     def _delete(self) -> None:
@@ -174,8 +239,10 @@ class TermWraith(App):
     }
     OptionList { height: auto; max-height: 12; }
     .buttons { height: auto; margin-top: 1; }
-    .buttons Button { margin-right: 2; }
-    Picker, PasswordPrompt, HostKeyScreen, SessionForm { align: center middle; }
+    .buttons Button { margin-right: 1; }
+    .row { height: auto; }
+    .row Label { padding: 1 0 0 1; }
+    Picker, PasswordPrompt, HostKeyScreen, SessionForm, SettingsScreen { align: center middle; }
     TabbedContent { height: 1fr; }
     TabPane { padding: 0; }
     """

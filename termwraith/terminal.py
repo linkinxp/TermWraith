@@ -1,5 +1,6 @@
 import string
 from functools import lru_cache
+from typing import BinaryIO
 
 import asyncssh
 import pyte
@@ -9,7 +10,7 @@ from textual import events
 from textual.message import Message
 from textual.widget import Widget
 
-from .store import KNOWN_HOSTS_FILE, Session, known_host_entry, stored_host_lines, trust_host
+from .store import KNOWN_HOSTS_FILE, Session, known_host_entry, load_config, log_path, stored_host_lines, trust_host
 
 APP_KEYS = {"f2", "f3", "f10", "ctrl+pagedown", "ctrl+pageup"}
 SPECIAL_KEYS = {
@@ -127,12 +128,17 @@ class SSHTerminal(Widget, can_focus=True):
 
         cols, rows = self._dims()
         self.buffer.resize(rows, cols)
+        log = None
         try:
+            log = self._open_log()
             self._proc = await self._conn.create_process(
                 term_type="xterm-256color", term_size=(cols, rows), stderr=asyncssh.STDOUT, encoding=None
             )
             while data := await self._proc.stdout.read(65536):
                 self._stream.feed(data)
+                if log is not None:
+                    log.write(data)
+                    log.flush()
                 self.refresh()
         except (OSError, asyncssh.Error) as exc:
             self._write(f"session error: {exc}")
@@ -140,7 +146,17 @@ class SSHTerminal(Widget, can_focus=True):
             self._proc = None
             self._conn.close()
             self._conn = None
+            if log is not None:
+                log.close()
         self._write("session closed")
+
+    def _open_log(self) -> BinaryIO | None:
+        config = load_config()
+        if not config.log_enabled:
+            return None
+        path = log_path(config, self.target.name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path.open("ab")
 
     def _dims(self) -> tuple[int, int]:
         return self.size.width or 80, self.size.height or 24
