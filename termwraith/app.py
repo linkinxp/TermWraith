@@ -9,8 +9,25 @@ from textual.containers import Horizontal
 from textual.widgets import Button, Footer, Header, Input, Label, Switch, TabbedContent, TabPane, Tree
 from textual.widgets.tree import TreeNode
 
+from textual.theme import Theme
+
 from .store import Config, Session, load_config, load_sessions, parse_target, write_config, write_sessions
 from .terminal import SSHTerminal
+
+DARCULA = Theme(
+    name="darcula",
+    primary="#6897BB",
+    secondary="#A9B7C6",
+    accent="#CC7832",
+    foreground="#A9B7C6",
+    background="#2B2B2B",
+    surface="#3C3F41",
+    panel="#313335",
+    warning="#FFC66D",
+    error="#FF6B68",
+    success="#6A8759",
+    dark=True,
+)
 
 
 class HostKeyScreen(ModalScreen[bool]):
@@ -288,6 +305,8 @@ class TermWraith(App):
     def __init__(self) -> None:
         super().__init__()
         self._tab_seq = 0
+        self.register_theme(DARCULA)
+        self.theme = DARCULA.name
 
     def compose(self) -> ComposeResult:
         yield Header()
