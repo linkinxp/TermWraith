@@ -2,6 +2,16 @@
 
 A SecureCRT-style terminal for SSH, telnet and serial, built on Textual.
 
+## Screenshots
+
+| Session picker | Session tab |
+|---|---|
+| ![Session picker](docs/screenshots/picker.png) | ![Session tab](docs/screenshots/session.png) |
+
+| Split pane (F6) | Settings |
+|---|---|
+| ![Split pane](docs/screenshots/split.png) | ![Settings](docs/screenshots/settings.png) |
+
 ## Install
 
 Linux and macOS (needs git and Python 3.10+):
