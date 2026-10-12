@@ -38,6 +38,7 @@ class Session:
 class Config:
     log_enabled: bool = False
     log_dir: str = str(Path.home() / ".local/state/termwraith/logs")
+    theme: str = "darcula"
     fg: str = "#A9B7C6"
     bg: str = "#2B2B2B"
     macros: list[dict] = field(default_factory=list)

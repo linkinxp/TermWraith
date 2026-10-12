@@ -55,6 +55,13 @@ DARCULA = Theme(
     success="#6A8759",
     dark=True,
 )
+DARK_THEMES = ["darcula", "nord", "gruvbox", "catppuccin-mocha", "dracula", "tokyo-night", "monokai", "rose-pine", "solarized-dark", "atom-one-dark"]
+LIGHT_THEMES = ["textual-light", "catppuccin-latte", "solarized-light", "rose-pine-dawn", "atom-one-light"]
+THEME_CHOICES = [
+    (f"{name.replace('-', ' ').title()}  (dark)", name) for name in DARK_THEMES
+] + [
+    (f"{name.replace('-', ' ').title()}  (light)", name) for name in LIGHT_THEMES
+]
 
 
 class HostKeyScreen(ModalScreen[bool]):
@@ -257,6 +264,8 @@ class SettingsScreen(ModalScreen[None]):
                 yield Label("Log session output")
             yield Label("Log directory")
             yield Input(value=self._config.log_dir, id="log-dir")
+            yield Label("Theme")
+            yield Select(THEME_CHOICES, value=self._config.theme, allow_blank=False, id="theme")
             with Horizontal(classes="buttons"):
                 yield Button("Save", variant="success", id="save")
                 yield Button("Cancel", id="cancel")
@@ -268,14 +277,21 @@ class SettingsScreen(ModalScreen[None]):
             self.notify("Log directory is required", severity="error")
             return
         enabled = self.query_one("#log-enabled", Switch).value
-        write_config(replace(self._config, log_enabled=enabled, log_dir=directory))
+        theme = self.query_one("#theme", Select).value
+        write_config(replace(self._config, log_enabled=enabled, log_dir=directory, theme=theme))
+        self.app.theme = theme
         self.dismiss(None)
+
+    @on(Select.Changed, "#theme")
+    def _preview_theme(self, event: Select.Changed) -> None:
+        self.app.theme = event.value
 
     @on(Button.Pressed, "#cancel")
     def _cancel_pressed(self) -> None:
-        self.dismiss(None)
+        self.action_cancel()
 
     def action_cancel(self) -> None:
+        self.app.theme = self._config.theme
         self.dismiss(None)
 
 
@@ -565,7 +581,8 @@ class TermWraith(App):
         self._master: str | None = None
         self.broadcast = False
         self.register_theme(DARCULA)
-        self.theme = DARCULA.name
+        theme = load_config().theme
+        self.theme = theme if theme in self.available_themes else DARCULA.name
 
     def compose(self) -> ComposeResult:
         yield Header(icon="◆")
