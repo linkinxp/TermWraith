@@ -23,6 +23,7 @@ from .store import (
     stored_host_lines,
     trust_host,
 )
+from . import socks
 from .telnet import TelnetFilter
 from .vault import VaultError, load_passwords, save_passwords
 
@@ -99,6 +100,8 @@ class SSHTerminal(Widget, can_focus=True):
         self._proc: asyncssh.SSHClientProcess | None = None
         self._tn: asyncio.StreamWriter | None = None
         self._ser = None
+        self._filter: TelnetFilter | None = None
+        self._servers: list[asyncio.Server] = []
         self._password: str | None = None
         self._closing = False
         self._offset = 0
@@ -137,6 +140,9 @@ class SSHTerminal(Widget, can_focus=True):
         if self._ser is not None:
             self._ser.close()
             self._ser = None
+        for server in self._servers:
+            server.close()
+        self._servers = []
 
     def _schedule_reconnect(self) -> None:
         if self.target.reconnect and not self._closing:
@@ -226,7 +232,8 @@ class SSHTerminal(Widget, can_focus=True):
             log = self._open_log()
             if t.protocol == "telnet":
                 reader, self._tn = await asyncio.open_connection(t.host, t.port or 23)
-                chunks = self._telnet_chunks(reader, self._tn)
+                self._filter = TelnetFilter(size=self._dims)
+                chunks = self._telnet_chunks(reader, self._tn, self._filter)
             else:
                 import serial
 
@@ -250,8 +257,9 @@ class SSHTerminal(Widget, can_focus=True):
         self._write("session closed")
         self._schedule_reconnect()
 
-    async def _telnet_chunks(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> AsyncIterator[bytes]:
-        filt = TelnetFilter()
+    async def _telnet_chunks(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, filt: TelnetFilter
+    ) -> AsyncIterator[bytes]:
         while data := await reader.read(65536):
             text, replies = filt.feed(data)
             if replies:
@@ -324,7 +332,9 @@ class SSHTerminal(Widget, can_focus=True):
         for spec in self.target.forwards:
             try:
                 kind, port, host, target_port = parse_forward(spec)
-                if kind == "L":
+                if kind == "D":
+                    self._servers.append(await socks.serve(self._conn, port))
+                elif kind == "L":
                     await self._conn.forward_local_port("", port, host, target_port)
                 else:
                     await self._conn.forward_remote_port("", port, host, target_port)
@@ -369,6 +379,8 @@ class SSHTerminal(Widget, can_focus=True):
             self.buffer.resize(rows, cols)
             if self._proc is not None:
                 self._proc.change_terminal_size(cols, rows)
+            if self._filter is not None and self._filter.naws and self._tn is not None:
+                self._tn.write(self._filter.window_packet(cols, rows))
 
     def on_focus(self) -> None:
         self.refresh()

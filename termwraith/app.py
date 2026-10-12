@@ -141,7 +141,7 @@ class SessionForm(ModalScreen[Session | None]):
             )
             yield Input(
                 value=", ".join(s.forwards) if s else "",
-                placeholder="forwards L:8080:db:5432, R:9000:localhost:3000",
+                placeholder="forwards L:8080:db:5432, R:9000:localhost:3000, D:1080",
                 id="forwards",
             )
             yield Select(

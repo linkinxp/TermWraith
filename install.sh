@@ -5,7 +5,13 @@ set -eu
 
 REPO="${TERMWRAITH_REPO:-https://github.com/linkinxp/TermWraith.git}"
 SRC="${TERMWRAITH_HOME:-$HOME/.local/share/termwraith}"
-BIN="${TERMWRAITH_BIN:-$HOME/.local/bin}"
+TERMUX="${TERMUX_VERSION:-}"
+if [ -n "$TERMUX" ]; then
+    BIN="${TERMWRAITH_BIN:-$PREFIX/bin}"
+    pkg install -y git python python-cryptography >/dev/null
+else
+    BIN="${TERMWRAITH_BIN:-$HOME/.local/bin}"
+fi
 
 command -v git >/dev/null 2>&1 || { echo "termwraith: git is required" >&2; exit 1; }
 PY="$(command -v python3 || true)"
@@ -18,7 +24,9 @@ else
     git clone -q "$REPO" "$SRC"
 fi
 
-"$PY" -m venv "$SRC/.venv" || { echo "termwraith: could not create a venv (on Debian/Ubuntu: sudo apt install python3-venv)" >&2; exit 1; }
+VENV_ARGS=""
+[ -n "$TERMUX" ] && VENV_ARGS="--system-site-packages"
+"$PY" -m venv $VENV_ARGS "$SRC/.venv" || { echo "termwraith: could not create a venv (on Debian/Ubuntu: sudo apt install python3-venv)" >&2; exit 1; }
 "$SRC/.venv/bin/python" -m pip install -q --upgrade pip
 "$SRC/.venv/bin/python" -m pip install -q "$SRC"
 

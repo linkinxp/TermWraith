@@ -108,7 +108,11 @@ def parse_target(text: str) -> Session:
 
 def parse_forward(text: str) -> tuple[str, int, str, int]:
     parts = text.strip().split(":")
+    if len(parts) == 2 and parts[0] == "D" and parts[1].isdigit():
+        return "D", int(parts[1]), "", 0
     if len(parts) != 4 or parts[0] not in ("L", "R"):
-        raise ValueError(f"bad forward {text!r}: use L:localport:host:remoteport or R:remoteport:host:localport")
+        raise ValueError(
+            f"bad forward {text!r}: use L:localport:host:remoteport, R:remoteport:host:localport or D:localport"
+        )
     kind, first, host, second = parts
     return kind, int(first), host, int(second)
