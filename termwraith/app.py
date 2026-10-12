@@ -111,6 +111,9 @@ class TextPrompt(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+DEFAULT_PORTS = {"ssh": "22", "telnet": "23"}
+
+
 class SessionForm(ModalScreen[Session | None]):
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
@@ -184,6 +187,12 @@ class SessionForm(ModalScreen[Session | None]):
             with Horizontal(classes="buttons"):
                 yield Button("Save", variant="success", id="save")
                 yield Button("Cancel", id="cancel")
+
+    @on(Select.Changed, "#protocol")
+    def _protocol_changed(self, event: Select.Changed) -> None:
+        port = self.query_one("#port", Input)
+        if port.value.strip() in DEFAULT_PORTS.values():
+            port.value = DEFAULT_PORTS.get(str(event.value), port.value)
 
     @on(Button.Pressed, "#save")
     def _save(self) -> None:
