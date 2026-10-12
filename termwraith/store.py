@@ -28,6 +28,8 @@ class Session:
     baud: int = 9600
     script: list[str] = field(default_factory=list)
     has_script: bool = False
+    colour_scheme: str = ""
+    scrollback: int = 5000
 
     @property
     def address(self) -> str:
@@ -44,6 +46,9 @@ class Config:
     fg: str = "#A9B7C6"
     bg: str = "#2B2B2B"
     macros: list[dict] = field(default_factory=list)
+    log_template: str = "{session}-{stamp}.log"
+    schemes: dict[str, list[str]] = field(default_factory=dict)
+    recent: list[str] = field(default_factory=list)
 
 
 def load_sessions(path: Path = SESSIONS_FILE) -> list[Session]:
@@ -75,10 +80,14 @@ def write_config(config: Config, path: Path = CONFIG_FILE) -> None:
     path.write_text(json.dumps(asdict(config), indent=2) + "\n")
 
 
-def log_path(config: Config, session_name: str) -> Path:
+def _safe(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", text)
+
+
+def log_path(config: Config, target: Session) -> Path:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", session_name)
-    return Path(config.log_dir).expanduser() / f"{safe_name}-{stamp}.log"
+    name = config.log_template.format(session=_safe(target.name), host=_safe(target.host), stamp=stamp)
+    return Path(config.log_dir).expanduser() / _safe(name)
 
 
 def read_known_hosts() -> list[str]:

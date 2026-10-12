@@ -118,6 +118,9 @@ def _to_session(path: str, values: dict[str, str | int], defaults: dict[str, str
         folder=folder,
         protocol=protocol,
         baud=int(merged.get("Baud Rate", 9600)) if protocol == "serial" else 9600,
+        reconnect=bool(merged.get("Auto Reconnect", 0)),
+        colour_scheme=str(merged.get("Color Scheme", "")),
+        scrollback=int(merged.get("Scrollback", 5000)),
     )
 
 
@@ -141,19 +144,23 @@ def _hex_colour(value: str) -> str | None:
     return f"#{digits.upper()}"
 
 
-def load_global_config(path: Path) -> dict[str, bool | str]:
+def load_global_config(path: Path) -> dict[str, object]:
     values = _parse_ini(_read_text(path))
-    found: dict[str, bool | str] = {}
+    found: dict[str, object] = {}
     if "Enable Log File" in values:
         found["log_enabled"] = bool(values["Enable Log File"])
     scheme = values.get("Command Window Color Scheme")
+    schemes: dict[str, list[str]] = {}
     for row in str(values.get("Color Schemes", "")).split("\n"):
         fields = row.split(",")
-        if len(fields) < 19 or fields[0] != scheme:
+        if len(fields) < 19:
             continue
         fg, bg = _hex_colour(fields[2]), _hex_colour(fields[10])
-        if fg and bg:
-            found["fg"] = fg
-            found["bg"] = bg
-        break
+        if not (fg and bg):
+            continue
+        schemes[fields[0]] = [fg, bg]
+        if fields[0] == scheme:
+            found["fg"], found["bg"] = fg, bg
+    if schemes:
+        found["schemes"] = schemes
     return found

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from textual import on
 from textual.app import App, ComposeResult
+from textual.events import Key
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
@@ -276,6 +277,8 @@ class SettingsScreen(ModalScreen[None]):
                 yield Label("Log session output")
             yield Label("Log directory")
             yield Input(value=self._config.log_dir, id="log-dir")
+            yield Label("Log filename, placeholders {session} {host} {stamp}")
+            yield Input(value=self._config.log_template, id="log-template")
             yield Label("Theme")
             yield Select(THEME_CHOICES, value=self._config.theme, allow_blank=False, id="theme")
             with Horizontal(classes="pair"):
@@ -299,6 +302,15 @@ class SettingsScreen(ModalScreen[None]):
         if not directory:
             self.notify("Log directory is required", severity="error")
             return
+        template = self.query_one("#log-template", Input).value.strip()
+        try:
+            template.format(session="x", host="x", stamp="x")
+        except (KeyError, IndexError, ValueError):
+            self.notify("Log filename may only use {session}, {host} and {stamp}", severity="error")
+            return
+        if not template:
+            self.notify("Log filename is required", severity="error")
+            return
         fg = self.query_one("#fg", Input).value.strip()
         bg = self.query_one("#bg", Input).value.strip()
         if not (HEX_COLOUR.match(fg) and HEX_COLOUR.match(bg)):
@@ -316,7 +328,16 @@ class SettingsScreen(ModalScreen[None]):
         enabled = self.query_one("#log-enabled", Switch).value
         theme = self.query_one("#theme", Select).value
         write_config(
-            replace(self._config, log_enabled=enabled, log_dir=directory, theme=theme, fg=fg, bg=bg, macros=macros)
+            replace(
+                self._config,
+                log_enabled=enabled,
+                log_dir=directory,
+                log_template=template,
+                theme=theme,
+                fg=fg,
+                bg=bg,
+                macros=macros,
+            )
         )
         self.app.theme = theme
         self.dismiss(None)
@@ -373,6 +394,7 @@ class Picker(ModalScreen[Session | None]):
     def __init__(self) -> None:
         super().__init__()
         self._sessions = load_sessions()
+        self._recall = -1
 
     def compose(self) -> ComposeResult:
         with Vertical(id="box") as box:
@@ -543,7 +565,10 @@ class Picker(ModalScreen[Session | None]):
         if not found:
             self.notify("no importable settings in that Global.ini", severity="warning")
             return
-        write_config(replace(load_config(), **found))
+        config = load_config()
+        if "schemes" in found:
+            found["schemes"] = {**config.schemes, **found["schemes"]}
+        write_config(replace(config, **found))
         self.notify(f"imported {', '.join(sorted(found))} from SecureCRT; new tabs use the new colours")
 
     def _finish_import(self, added: list[Session], master: str | None) -> None:
@@ -590,9 +615,23 @@ class Picker(ModalScreen[Session | None]):
         if not value:
             return
         try:
-            self.dismiss(parse_target(value))
+            target = parse_target(value)
         except ValueError:
             self.notify("Port must be a number", severity="error")
+            return
+        config = load_config()
+        write_config(replace(config, recent=[value, *(v for v in config.recent if v != value)][:10]))
+        self.dismiss(target)
+
+    def on_key(self, event: Key) -> None:
+        quick = self.query_one("#quick", Input)
+        recent = load_config().recent
+        if self.focused is not quick or event.key not in ("up", "down") or not recent:
+            return
+        self._recall = max(-1, min(len(recent) - 1, self._recall + (1 if event.key == "up" else -1)))
+        quick.value = recent[self._recall] if self._recall >= 0 else ""
+        quick.cursor_position = len(quick.value)
+        event.stop()
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -618,6 +657,26 @@ class PasswordPrompt(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class SearchResults(ModalScreen[int | None]):
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, rows: list[str]) -> None:
+        super().__init__()
+        self._rows = rows
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="box") as box:
+            box.border_title = f"{len(self._rows)} matches in open tabs"
+            yield OptionList(*self._rows, id="hits")
+
+    @on(OptionList.OptionSelected)
+    def _pick(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(event.option_index)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class TermWraith(App):
     TITLE = "termwraith"
     SUB_TITLE = "SSH · telnet · serial"
@@ -635,7 +694,7 @@ class TermWraith(App):
     #form-box { width: 96; height: 95%; border: round $primary; border-title-color: $accent; border-title-style: bold; background: $surface; padding: 1 2; }
     #form-body { height: 1fr; }
     .pair { height: auto; }
-    #macros { height: 6; }
+    #macros { height: 4; }
     .field { width: 1fr; height: auto; margin-right: 2; }
     .field.narrow { width: 14; }
     .field.full { width: 100%; margin-right: 0; }
@@ -650,6 +709,7 @@ class TermWraith(App):
     SftpScreen { align: center middle; }
     ResourcesScreen { align: center middle; }
     #res-box { width: 70; height: auto; border: thick $accent; background: $surface; padding: 1 2; }
+    #hits { height: auto; max-height: 20; }
     #filter { margin-bottom: 1; border: round $primary-darken-2; }
     #filter:focus { border: round $accent; }
     #saved { height: 14; background: $panel; padding: 0 1; }
@@ -676,6 +736,7 @@ class TermWraith(App):
         Binding("f4", "resources", "Resources"),
         Binding("f9", "sftp", "SFTP"),
         Binding("ctrl+f", "search", "Find"),
+        Binding("f5", "search_all", "Find in tabs"),
         Binding("ctrl+b", "broadcast", "Broadcast"),
         Binding("ctrl+pagedown", "cycle_tab(1)", "Next tab", show=False),
         Binding("ctrl+pageup", "cycle_tab(-1)", "Prev tab", show=False),
@@ -830,6 +891,36 @@ class TermWraith(App):
             return
         count = term.search(query)
         self.notify(f"{count} match{'es' if count != 1 else ''}" if count else "no matches")
+
+    def action_search_all(self) -> None:
+        self.push_screen(TextPrompt("Search all open tabs"), self._run_search_all)
+
+    def _run_search_all(self, query: str | None) -> None:
+        if not query:
+            return
+        needle = query.lower()
+        hits: list[tuple[str, SSHTerminal]] = []
+        rows: list[str] = []
+        tabs = self.query_one(TabbedContent)
+        for pane in tabs.query(TabPane):
+            label = tabs.get_tab(pane.id).label_text
+            for term in pane.query(SSHTerminal):
+                for line in term._screen_text().splitlines():
+                    if needle in line.lower():
+                        hits.append((pane.id, term))
+                        rows.append(f"{label}  {line.strip()[:60]}")
+        if not rows:
+            self.notify("no matches in open tabs")
+            return
+        self.push_screen(SearchResults(rows), lambda index: self._jump_to_hit(hits, index, query))
+
+    def _jump_to_hit(self, hits: list[tuple[str, SSHTerminal]], index: int | None, query: str) -> None:
+        if index is None:
+            return
+        pane_id, term = hits[index]
+        self.query_one(TabbedContent).active = pane_id
+        term.search(query)
+        term.focus()
 
     def action_search_next(self) -> None:
         term = self._focused_term()

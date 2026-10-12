@@ -42,11 +42,17 @@ In the session picker, press Import and give a path to either:
 - a `.reg` export of `HKEY_CURRENT_USER\Software\VanDyke\SecureCRT\Sessions`
 - SecureCRT's `Global.ini` (`%APPDATA%\VanDyke\Config`) to import the command-window colour scheme and the logging switch
 
-Folders, hosts, ports, usernames, key paths, serial ports and baud rates are imported; the `Default` session fills in missing values. Saved passwords are encrypted by SecureCRT and are not imported; re-enter them in termwraith. From `Global.ini` only the colour scheme and logging switch carry over; other SecureCRT settings have no termwraith equivalent yet.
+Folders, hosts, ports, usernames, key paths, serial ports and baud rates are imported; the `Default` session fills in missing values. Each session also keeps its SecureCRT colour scheme name, scrollback length and auto-reconnect setting. Saved passwords are encrypted by SecureCRT and are not imported; re-enter them in termwraith. From `Global.ini` the colour schemes (so imported sessions can use them), the command-window colours and the logging switch carry over; other SecureCRT settings have no termwraith equivalent yet.
+
+## Logs
+
+Set the log directory and filename template in Settings. The template accepts `{session}`, `{host}` and `{stamp}` (timestamp), for example `{host}_{session}_{stamp}.log`. Unsafe characters are replaced with `_`.
 
 ## Keys
 
 - F2 connect, F3 close tab, F4 remote resources (SSH), F6 split pane, F7 rename tab
-- F8 next search match, Ctrl+F search, Ctrl+B broadcast to all panes
+- F5 find text in all open tabs (pick a hit to jump to its tab), F8 next search match, Ctrl+F search, Ctrl+B broadcast to all panes
+- Quick connect: Up/Down recalls the last 10 targets typed in the picker
+- Picker: the search box above the session list filters by name, host, user, folder or protocol
 - Forwards: L:local:host:remote, R:remote:host:local, D:port (SOCKS5 proxy, SSH)
 - F9 SFTP browser (SSH), Ctrl+PgUp/PgDn cycle tabs, Shift+PgUp/PgDn scroll, F10 quit

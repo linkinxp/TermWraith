@@ -44,7 +44,6 @@ CURSOR_KEYS = {"up": "A", "down": "B", "right": "C", "left": "D", "home": "H", "
 DECCKM = 1 << 5
 RECONNECT_DELAY = 5
 KEEPALIVE_SECONDS = 30
-SCROLLBACK = 5000
 WHEEL_LINES = 3
 
 
@@ -90,10 +89,9 @@ class SSHTerminal(Widget, can_focus=True):
         self.target = target
         self.master = master
         config = load_config()
-        self._fg = config.fg
-        self._bg = config.bg
+        self._fg, self._bg = config.schemes.get(target.colour_scheme) or (config.fg, config.bg)
         self._macros = {m["key"]: codecs.decode(m["send"], "unicode_escape") for m in config.macros}
-        self.buffer = pyte.HistoryScreen(80, 24, history=SCROLLBACK)
+        self.buffer = pyte.HistoryScreen(80, 24, history=target.scrollback)
         self._stream = pyte.ByteStream(self.buffer)
         self._conn: asyncssh.SSHClientConnection | None = None
         self._jump: asyncssh.SSHClientConnection | None = None
@@ -388,7 +386,7 @@ class SSHTerminal(Widget, can_focus=True):
         config = load_config()
         if not config.log_enabled:
             return None
-        path = log_path(config, self.target.name)
+        path = log_path(config, self.target)
         path.parent.mkdir(parents=True, exist_ok=True)
         return path.open("ab")
 
