@@ -367,6 +367,8 @@ class HostsScreen(ModalScreen[None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="box"):
             yield Label("Known hosts (highlight a line, then Remove)")
+            if not self._lines:
+                yield Label("No known hosts yet. Hosts are saved on first connect.")
             yield OptionList(*self._lines, id="hosts-list")
             with Horizontal(classes="buttons"):
                 yield Button("Remove", variant="error", id="remove")
@@ -711,7 +713,8 @@ class TermWraith(App):
     SftpScreen { align: center middle; }
     ResourcesScreen { align: center middle; }
     #res-box { width: 70; height: auto; border: thick $accent; background: $surface; padding: 1 2; }
-    #hits { height: auto; max-height: 20; }
+    SearchResults { align: center middle; }
+    #hits { width: 100%; height: auto; max-height: 20; }
     #filter { margin-bottom: 1; border: round $primary-darken-2; }
     #filter:focus { border: round $accent; }
     #saved { height: 14; background: $panel; padding: 0 1; }

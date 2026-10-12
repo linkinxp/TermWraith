@@ -398,6 +398,7 @@ class SSHTerminal(Widget, can_focus=True):
                 self._proc.change_terminal_size(cols, rows)
             if self._filter is not None and self._filter.naws and self._tn is not None:
                 self._tn.write(self._filter.window_packet(cols, rows))
+            self.refresh()
 
     def on_focus(self) -> None:
         self.refresh()
