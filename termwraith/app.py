@@ -39,7 +39,7 @@ from .store import (
 from .resources import ResourcesScreen
 from .sftp import SftpScreen
 from .terminal import SSHTerminal
-from .vault import VaultError, load_passwords, load_script, set_script
+from .vault import VaultError, forget, load_passwords, load_script, set_script
 
 DARCULA = Theme(
     name="darcula",
@@ -448,9 +448,18 @@ class Picker(ModalScreen[Session | None]):
         )
 
     def _do_export(self, path: str | None) -> None:
-        if path:
-            write_sessions(self._sessions, Path(path).expanduser())
-            self.notify(f"exported {len(self._sessions)} sessions")
+        if not path:
+            return
+        target = Path(path).expanduser()
+        if any(s.has_script for s in self._sessions):
+            self.app.with_master(lambda master: self._write_export(target, master))
+        else:
+            self._write_export(target, None)
+
+    def _write_export(self, target: Path, master: str | None) -> None:
+        out = [replace(s, script=load_script(master, s.name), has_script=False) if s.has_script else s for s in self._sessions]
+        write_sessions(out, target)
+        self.notify(f"exported {len(out)} sessions; logon scripts are in plain text, keep the file private", severity="warning")
 
     @on(Button.Pressed, "#import")
     def _import(self) -> None:
@@ -466,7 +475,16 @@ class Picker(ModalScreen[Session | None]):
             return
         known = {(s.name, s.user, s.host, s.port) for s in self._sessions}
         added = [s for s in incoming if (s.name, s.user, s.host, s.port) not in known]
-        self._sessions.extend(added)
+        if any(s.script for s in added):
+            self.app.with_master(lambda master: self._finish_import(added, master))
+        else:
+            self._finish_import(added, None)
+
+    def _finish_import(self, added: list[Session], master: str | None) -> None:
+        for s in added:
+            if s.script:
+                set_script(master, s.name, s.script)
+            self._sessions.append(replace(s, has_script=bool(s.script), script=[]))
         write_sessions(self._sessions)
         self._reload()
         self.notify(f"imported {len(added)} sessions")
@@ -476,9 +494,21 @@ class Picker(ModalScreen[Session | None]):
         index = self._selected_index()
         if index is None:
             return
-        del self._sessions[index]
-        write_sessions(self._sessions)
-        self._reload()
+        old = self._sessions[index]
+
+        def remove(master: str | None) -> None:
+            del self._sessions[index]
+            if master is not None:
+                script_name = None if any(s.name == old.name and s.has_script for s in self._sessions) or not old.has_script else old.name
+                shared = any(s.address == old.address for s in self._sessions)
+                forget(master, script_name, None if shared or not old.vault else old.address)
+            write_sessions(self._sessions)
+            self._reload()
+
+        if old.has_script or old.vault:
+            self.app.with_master(remove)
+        else:
+            remove(None)
 
     @on(Input.Submitted)
     def _quick(self, event: Input.Submitted) -> None:

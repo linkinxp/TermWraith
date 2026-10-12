@@ -31,6 +31,8 @@ class Session:
 
     @property
     def address(self) -> str:
+        if self.protocol == "serial":
+            return self.host
         return f"{self.user}@{self.host}:{self.port}" if self.user else f"{self.host}:{self.port}"
 
 

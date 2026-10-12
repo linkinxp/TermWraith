@@ -56,3 +56,12 @@ def set_script(master: str, name: str, lines: list[str], old_name: str | None = 
     else:
         passwords.pop(_script_key(name), None)
     save_passwords(passwords, master)
+
+
+def forget(master: str, script_name: str | None = None, address: str | None = None) -> None:
+    passwords = load_passwords(master)
+    if script_name is not None:
+        passwords.pop(_script_key(script_name), None)
+    if address is not None:
+        passwords.pop(address, None)
+    save_passwords(passwords, master)
