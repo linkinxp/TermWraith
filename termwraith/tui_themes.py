@@ -14,6 +14,15 @@ PALETTES = {
     "tui-wallx": ("#282A36", "#FFFFFF", "#FF79C6", "#FF5555", "#8BE9FD"),
     "tui-tomboy-girl": ("#000000", "#FFD600", "#FFD600", "#FFFFFF", "#FFD600"),
     "tui-mellogram": ("#333333", "#0EC201", "#0EC201", "#4682B4", "#FFFFFF"),
+    "tui-arch-neofetch": ("#282A36", "#66FF33", "#FFFF22", "#BD93F9", "#6272A4"),
+    "tui-arch-neonight": ("#24283B", "#C0CAF5", "#7AA2F7", "#BD93F9", "#C0CAF5"),
+    "tui-archer": ("#282A36", "#FFFFFF", "#1793D1", "#A3FFEA", "#444444"),
+    "tui-clean": ("#000000", "#FFFFFF", "#EBDBB2", "#FF9800", "#4C87C7"),
+    "tui-cosmic": ("#000000", "#FFFFFF", "#FC3401", "#FF5200", "#FFFFFF"),
+    "tui-hunting-dracula": ("#282A36", "#FFFFFF", "#FF79C6", "#BD93F9", "#6272A4"),
+    "tui-gf-m4a1": ("#000000", "#B3D936", "#FCF7F0", "#B3D936", "#B3D936"),
+    "tui-tokyo-night": ("#24283B", "#C0CAF5", "#7AA2F7", "#BD93F9", "#E0AF68"),
+    "tui-vram": ("#000000", "#EEC900", "#C5C1AA", "#87CEEB", "#FF83FA"),
 }
 
 
