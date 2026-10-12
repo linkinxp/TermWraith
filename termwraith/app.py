@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -112,6 +113,7 @@ class TextPrompt(ModalScreen[str | None]):
 
 
 DEFAULT_PORTS = {"ssh": "22", "telnet": "23"}
+HEX_COLOUR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 class SessionForm(ModalScreen[Session | None]):
@@ -275,6 +277,17 @@ class SettingsScreen(ModalScreen[None]):
             yield Input(value=self._config.log_dir, id="log-dir")
             yield Label("Theme")
             yield Select(THEME_CHOICES, value=self._config.theme, allow_blank=False, id="theme")
+            with Horizontal(classes="pair"):
+                with Vertical(classes="field"):
+                    yield Label("Terminal text colour (#RRGGBB)")
+                    yield Input(value=self._config.fg, id="fg")
+                with Vertical(classes="field"):
+                    yield Label("Terminal background (#RRGGBB)")
+                    yield Input(value=self._config.bg, id="bg")
+            yield Label("Macros, one per line: key = text  (e.g. f5 = ls -la\\r)")
+            yield TextArea(
+                "\n".join(f"{m['key']} = {m['send']}" for m in self._config.macros), id="macros"
+            )
             with Horizontal(classes="buttons"):
                 yield Button("Save", variant="success", id="save")
                 yield Button("Cancel", id="cancel")
@@ -285,9 +298,25 @@ class SettingsScreen(ModalScreen[None]):
         if not directory:
             self.notify("Log directory is required", severity="error")
             return
+        fg = self.query_one("#fg", Input).value.strip()
+        bg = self.query_one("#bg", Input).value.strip()
+        if not (HEX_COLOUR.match(fg) and HEX_COLOUR.match(bg)):
+            self.notify("Colours must be #RRGGBB", severity="error")
+            return
+        macros = []
+        for line in self.query_one("#macros", TextArea).text.splitlines():
+            if not line.strip():
+                continue
+            key, sep, send = line.partition("=")
+            if not sep or not key.strip() or not send.strip():
+                self.notify(f"Macro needs 'key = text': {line.strip()}", severity="error")
+                return
+            macros.append({"key": key.strip(), "send": send.strip()})
         enabled = self.query_one("#log-enabled", Switch).value
         theme = self.query_one("#theme", Select).value
-        write_config(replace(self._config, log_enabled=enabled, log_dir=directory, theme=theme))
+        write_config(
+            replace(self._config, log_enabled=enabled, log_dir=directory, theme=theme, fg=fg, bg=bg, macros=macros)
+        )
         self.app.theme = theme
         self.dismiss(None)
 
@@ -570,6 +599,7 @@ class TermWraith(App):
     #form-box { width: 96; height: 95%; border: round $primary; border-title-color: $accent; border-title-style: bold; background: $surface; padding: 1 2; }
     #form-body { height: 1fr; }
     .pair { height: auto; }
+    #macros { height: 6; }
     .field { width: 1fr; height: auto; margin-right: 2; }
     .field.narrow { width: 14; }
     .field.full { width: 100%; margin-right: 0; }

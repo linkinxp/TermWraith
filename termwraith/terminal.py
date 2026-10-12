@@ -242,11 +242,15 @@ class SSHTerminal(Widget, can_focus=True):
             self.refresh()
             if t.script:
                 self.run_worker(self._run_script(), exit_on_error=False)
+            telnet_password = self._vault_password() if t.protocol == "telnet" else None
             async for data in chunks:
                 self._stream.feed(data)
                 if log is not None:
                     log.write(data)
                     log.flush()
+                if telnet_password and self._last_line().lower().endswith("password:"):
+                    self._input((telnet_password + "\r").encode())
+                    telnet_password = None
                 self.refresh()
         except (OSError, asyncssh.Error) as exc:
             self._write(f"connection failed: {exc}")
@@ -286,9 +290,24 @@ class SSHTerminal(Widget, can_focus=True):
             elif verb == "wait" and arg:
                 await asyncio.sleep(float(arg))
 
+    def _vault_password(self) -> str | None:
+        if not (self.target.vault and self.master):
+            return None
+        try:
+            return load_passwords(self.master).get(self.target.address)
+        except VaultError:
+            return None
+
+    def _last_line(self) -> str:
+        return next((line.rstrip() for line in reversed(self.buffer.display) if line.strip()), "")
+
+    def _screen_text(self) -> str:
+        history = ["".join(line[x].data for x in range(self.buffer.columns)) for line in self.buffer.history.top]
+        return "\n".join(history + self.buffer.display)
+
     async def _wait_for(self, text: str, timeout: float) -> bool:
         for _ in range(int(timeout / 0.2)):
-            if text in "\n".join(self.buffer.display):
+            if text in self._screen_text():
                 return True
             await asyncio.sleep(0.2)
         return False
