@@ -310,20 +310,19 @@ class Picker(ModalScreen[Session | None]):
         self._sessions = load_sessions()
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="box"):
-            yield Label("Saved sessions")
-            yield Tree("Saved sessions", id="saved")
+        with Vertical(id="box") as box:
+            box.border_title = "Sessions"
+            yield Tree("Sessions", id="saved")
             with Horizontal(classes="buttons"):
                 yield Button("New", variant="primary", id="new")
                 yield Button("Edit", id="edit")
                 yield Button("Delete", variant="error", id="delete")
-            with Horizontal(classes="buttons"):
+            with Horizontal(classes="buttons second"):
                 yield Button("Hosts", id="hosts")
                 yield Button("Export", id="export")
                 yield Button("Import", id="import")
                 yield Button("Settings", id="settings")
-            yield Label("Quick connect  user@host[:port]")
-            yield Input(placeholder="deploy@10.0.0.5:2222", id="quick")
+            yield Input(placeholder="Quick connect  deploy@10.0.0.5:2222", id="quick")
 
     def on_mount(self) -> None:
         self._reload()
@@ -331,6 +330,7 @@ class Picker(ModalScreen[Session | None]):
     def _reload(self) -> None:
         tree = self.query_one("#saved", Tree)
         tree.clear()
+        tree.show_root = False
         tree.root.expand()
         folders: dict[str, TreeNode] = {"": tree.root}
         ordered = sorted(enumerate(self._sessions), key=lambda pair: (pair[1].folder.lower(), pair[1].name.lower()))
@@ -490,12 +490,15 @@ class PasswordPrompt(ModalScreen[str | None]):
 
 class TermWraith(App):
     TITLE = "termwraith"
+    SUB_TITLE = "SSH · telnet · serial"
     CSS = """
     #box {
-        width: 64;
+        width: 78;
         height: auto;
         max-height: 90%;
-        border: thick $accent;
+        border: round $primary;
+        border-title-color: $accent;
+        border-title-style: bold;
         background: $surface;
         padding: 1 2;
     }
@@ -505,10 +508,14 @@ class TermWraith(App):
     SftpScreen { align: center middle; }
     ResourcesScreen { align: center middle; }
     #res-box { width: 70; height: auto; border: thick $accent; background: $surface; padding: 1 2; }
-    #saved { height: 12; }
+    #saved { height: 14; background: $panel; padding: 0 1; }
+    #quick { margin-top: 1; border: round $primary-darken-2; }
+    #quick:focus { border: round $accent; }
     #hosts-list { height: 12; }
     .buttons { height: auto; margin-top: 1; }
-    .buttons Button { margin-right: 1; }
+    .buttons.second { margin-top: 0; }
+    .buttons Button { height: 1; min-width: 9; border: none; margin-right: 2; padding: 0 1; }
+    .buttons Button:focus { text-style: bold reverse; }
     .row { height: auto; }
     .row Label { padding: 1 0 0 1; }
     Picker, PasswordPrompt, HostKeyScreen, SessionForm, SettingsScreen, HostsScreen, TextPrompt { align: center middle; }
@@ -521,10 +528,10 @@ class TermWraith(App):
         Binding("f3", "close_tab", "Close tab"),
         Binding("f6", "split", "Split"),
         Binding("f7", "rename", "Rename"),
-        Binding("f8", "search_next", "Next match"),
+        Binding("f8", "search_next", "Next", show=False),
         Binding("f4", "resources", "Resources"),
         Binding("f9", "sftp", "SFTP"),
-        Binding("ctrl+f", "search", "Search"),
+        Binding("ctrl+f", "search", "Find"),
         Binding("ctrl+b", "broadcast", "Broadcast"),
         Binding("ctrl+pagedown", "cycle_tab(1)", "Next tab", show=False),
         Binding("ctrl+pageup", "cycle_tab(-1)", "Prev tab", show=False),
@@ -540,7 +547,7 @@ class TermWraith(App):
         self.theme = DARCULA.name
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield Header(icon="◆")
         yield TabbedContent()
         yield Footer()
 
@@ -602,7 +609,7 @@ class TermWraith(App):
         pane_id = f"tab-{self._tab_seq}"
         tabs = self.query_one(TabbedContent)
         pane = TabPane(
-            f"{target.user}@{target.host}",
+            f"{target.user}@{target.host}" if target.user else target.host,
             Horizontal(SSHTerminal(target, self._master), classes="split"),
             id=pane_id,
         )
