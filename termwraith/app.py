@@ -377,6 +377,7 @@ class Picker(ModalScreen[Session | None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="box") as box:
             box.border_title = "Sessions"
+            yield Input(placeholder="Search sessions", id="filter")
             yield Tree("Sessions", id="saved")
             with Horizontal(classes="buttons"):
                 yield Button("New", variant="primary", id="new")
@@ -398,8 +399,12 @@ class Picker(ModalScreen[Session | None]):
         tree.show_root = False
         tree.root.expand()
         folders: dict[str, TreeNode] = {"": tree.root}
+        terms = self.query_one("#filter", Input).value.lower().split()
         ordered = sorted(enumerate(self._sessions), key=lambda pair: (pair[1].folder.lower(), pair[1].name.lower()))
         for index, session in ordered:
+            haystack = " ".join((session.name, session.host, session.user, session.folder, session.protocol)).lower()
+            if not all(term in haystack for term in terms):
+                continue
             parent = self._folder_node(folders, session.folder)
             parent.add_leaf(f"{session.name}  ({session.address})", data=index)
 
@@ -571,7 +576,15 @@ class Picker(ModalScreen[Session | None]):
         else:
             remove(None)
 
-    @on(Input.Submitted)
+    @on(Input.Changed, "#filter")
+    def _filter_changed(self) -> None:
+        self._reload()
+
+    @on(Input.Submitted, "#filter")
+    def _filter_submitted(self) -> None:
+        self.query_one("#saved", Tree).focus()
+
+    @on(Input.Submitted, "#quick")
     def _quick(self, event: Input.Submitted) -> None:
         value = event.value.strip()
         if not value:
@@ -637,6 +650,8 @@ class TermWraith(App):
     SftpScreen { align: center middle; }
     ResourcesScreen { align: center middle; }
     #res-box { width: 70; height: auto; border: thick $accent; background: $surface; padding: 1 2; }
+    #filter { margin-bottom: 1; border: round $primary-darken-2; }
+    #filter:focus { border: round $accent; }
     #saved { height: 14; background: $panel; padding: 0 1; }
     #quick { margin-top: 1; border: round $primary-darken-2; }
     #quick:focus { border: round $accent; }
