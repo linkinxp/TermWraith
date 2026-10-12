@@ -7,7 +7,20 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.theme import Theme
-from textual.widgets import Button, Footer, Header, Input, Label, OptionList, Switch, TabbedContent, TabPane, Tree
+from textual.widgets import (
+    Button,
+    Footer,
+    Header,
+    Input,
+    Label,
+    OptionList,
+    Select,
+    Switch,
+    TabbedContent,
+    TabPane,
+    TextArea,
+    Tree,
+)
 from textual.widgets.tree import TreeNode
 
 from .store import (
@@ -22,6 +35,7 @@ from .store import (
     write_known_hosts,
     write_sessions,
 )
+from .sftp import SftpScreen
 from .terminal import SSHTerminal
 from .vault import VaultError, load_passwords
 
@@ -129,6 +143,19 @@ class SessionForm(ModalScreen[Session | None]):
                 placeholder="forwards L:8080:db:5432, R:9000:localhost:3000",
                 id="forwards",
             )
+            yield Select(
+                [("SSH", "ssh"), ("Telnet", "telnet"), ("Serial", "serial")],
+                value=s.protocol if s else "ssh",
+                allow_blank=False,
+                id="protocol",
+            )
+            yield Input(
+                value=str(s.baud) if s else "9600",
+                placeholder="serial baud rate (serial only)",
+                id="baud",
+            )
+            yield Label("Logon script, one step per line: expect TEXT / send TEXT / wait SECONDS")
+            yield TextArea("\n".join(s.script) if s else "", id="script")
             with Horizontal(classes="row"):
                 yield Switch(value=s.reconnect if s else False, id="reconnect")
                 yield Label("Auto-reconnect")
@@ -144,12 +171,18 @@ class SessionForm(ModalScreen[Session | None]):
         host = self.query_one("#host", Input).value.strip()
         user = self.query_one("#user", Input).value.strip()
         port_text = self.query_one("#port", Input).value.strip() or "22"
-        if not host or not user:
-            self.notify("Host and user are required", severity="error")
+        protocol = str(self.query_one("#protocol", Select).value)
+        if not host or (protocol == "ssh" and not user):
+            self.notify("Host and user are required" if protocol == "ssh" else "Host is required", severity="error")
             return
         if not port_text.isdigit() or not 0 < int(port_text) < 65536:
             self.notify("Port must be between 1 and 65535", severity="error")
             return
+        baud_text = self.query_one("#baud", Input).value.strip() or "9600"
+        if not baud_text.isdigit() or int(baud_text) <= 0:
+            self.notify("Baud rate must be a positive number", severity="error")
+            return
+        script = [line.strip() for line in self.query_one("#script", TextArea).text.splitlines() if line.strip()]
         jump = self.query_one("#jump", Input).value.strip()
         if jump:
             try:
@@ -183,6 +216,9 @@ class SessionForm(ModalScreen[Session | None]):
                 cert=cert,
                 reconnect=self.query_one("#reconnect", Switch).value,
                 vault=self.query_one("#vault", Switch).value,
+                protocol=protocol,
+                baud=int(baud_text),
+                script=script,
             )
         )
 
@@ -440,6 +476,10 @@ class TermWraith(App):
         background: $surface;
         padding: 1 2;
     }
+    #script { height: 6; }
+    #sftp-box { width: 90%; height: 80%; border: thick $accent; background: $surface; padding: 1 2; }
+    #sftp-list { height: 1fr; }
+    SftpScreen { align: center middle; }
     #saved { height: 12; }
     #hosts-list { height: 12; }
     .buttons { height: auto; margin-top: 1; }
@@ -457,6 +497,7 @@ class TermWraith(App):
         Binding("f6", "split", "Split"),
         Binding("f7", "rename", "Rename"),
         Binding("f8", "search_next", "Next match"),
+        Binding("f9", "sftp", "SFTP"),
         Binding("ctrl+f", "search", "Search"),
         Binding("ctrl+b", "broadcast", "Broadcast"),
         Binding("ctrl+pagedown", "cycle_tab(1)", "Next tab", show=False),
@@ -527,6 +568,13 @@ class TermWraith(App):
         tabs = self.query_one(TabbedContent)
         if tabs.active:
             await tabs.remove_pane(tabs.active)
+
+    def action_sftp(self) -> None:
+        term = self._focused_term()
+        if term is None or term._conn is None:
+            self.notify("SFTP needs an active SSH session", severity="warning")
+            return
+        self.push_screen(SftpScreen(term._conn))
 
     async def action_split(self) -> None:
         pane = self.query_one(TabbedContent).active_pane

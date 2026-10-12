@@ -24,10 +24,13 @@ class Session:
     cert: str | None = None
     reconnect: bool = False
     vault: bool = False
+    protocol: str = "ssh"
+    baud: int = 9600
+    script: list[str] = field(default_factory=list)
 
     @property
     def address(self) -> str:
-        return f"{self.user}@{self.host}:{self.port}"
+        return f"{self.user}@{self.host}:{self.port}" if self.user else f"{self.host}:{self.port}"
 
 
 @dataclass(frozen=True)

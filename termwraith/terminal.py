@@ -1,7 +1,8 @@
+import asyncio
 import codecs
 import string
 from functools import lru_cache
-from typing import BinaryIO
+from typing import AsyncIterator, BinaryIO
 
 import asyncssh
 import pyte
@@ -22,9 +23,10 @@ from .store import (
     stored_host_lines,
     trust_host,
 )
+from .telnet import TelnetFilter
 from .vault import VaultError, load_passwords, save_passwords
 
-APP_KEYS = {"f2", "f3", "f6", "f7", "f8", "f10", "ctrl+b", "ctrl+f", "ctrl+pagedown", "ctrl+pageup"}
+APP_KEYS = {"f2", "f3", "f6", "f7", "f8", "f9", "f10", "ctrl+b", "ctrl+f", "ctrl+pagedown", "ctrl+pageup"}
 SPECIAL_KEYS = {
     "enter": "\r",
     "tab": "\t",
@@ -95,6 +97,8 @@ class SSHTerminal(Widget, can_focus=True):
         self._conn: asyncssh.SSHClientConnection | None = None
         self._jump: asyncssh.SSHClientConnection | None = None
         self._proc: asyncssh.SSHClientProcess | None = None
+        self._tn: asyncio.StreamWriter | None = None
+        self._ser = None
         self._password: str | None = None
         self._closing = False
         self._offset = 0
@@ -127,6 +131,12 @@ class SSHTerminal(Widget, can_focus=True):
                 conn.close()
         self._conn = None
         self._jump = None
+        if self._tn is not None:
+            self._tn.close()
+            self._tn = None
+        if self._ser is not None:
+            self._ser.close()
+            self._ser = None
 
     def _schedule_reconnect(self) -> None:
         if self.target.reconnect and not self._closing:
@@ -136,6 +146,9 @@ class SSHTerminal(Widget, can_focus=True):
     async def _session(self, password: str | None, typed: bool) -> None:
         t = self.target
         self._write(f"connecting to {t.address} ...")
+        if t.protocol in ("telnet", "serial"):
+            await self._session_plain()
+            return
         if t.jump:
             jump = parse_target(t.jump)
             if not await self._check_host_key(jump.host, jump.port, password):
@@ -188,6 +201,8 @@ class SSHTerminal(Widget, can_focus=True):
             self._proc = await self._conn.create_process(
                 term_type="xterm-256color", term_size=(cols, rows), stderr=asyncssh.STDOUT, encoding=None
             )
+            if t.script:
+                self.run_worker(self._run_script(), exit_on_error=False)
             while data := await self._proc.stdout.read(65536):
                 self._stream.feed(data)
                 if log is not None:
@@ -203,6 +218,83 @@ class SSHTerminal(Widget, can_focus=True):
         self._close_transport()
         self._write("session closed")
         self._schedule_reconnect()
+
+    async def _session_plain(self) -> None:
+        t = self.target
+        log = None
+        try:
+            log = self._open_log()
+            if t.protocol == "telnet":
+                reader, self._tn = await asyncio.open_connection(t.host, t.port or 23)
+                chunks = self._telnet_chunks(reader, self._tn)
+            else:
+                import serial
+
+                self._ser = await asyncio.to_thread(serial.Serial, t.host, t.baud, timeout=0.2)
+                chunks = self._serial_chunks(self._ser)
+            self.refresh()
+            if t.script:
+                self.run_worker(self._run_script(), exit_on_error=False)
+            async for data in chunks:
+                self._stream.feed(data)
+                if log is not None:
+                    log.write(data)
+                    log.flush()
+                self.refresh()
+        except (OSError, asyncssh.Error) as exc:
+            self._write(f"connection failed: {exc}")
+        finally:
+            self._close_transport()
+            if log is not None:
+                log.close()
+        self._write("session closed")
+        self._schedule_reconnect()
+
+    async def _telnet_chunks(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> AsyncIterator[bytes]:
+        filt = TelnetFilter()
+        while data := await reader.read(65536):
+            text, replies = filt.feed(data)
+            if replies:
+                writer.write(replies)
+            if text:
+                yield text
+
+    async def _serial_chunks(self, ser) -> AsyncIterator[bytes]:
+        while ser.is_open:
+            data = await asyncio.to_thread(ser.read, 4096)
+            if data:
+                yield data
+
+    async def _run_script(self) -> None:
+        for step in self.target.script:
+            verb, _, arg = step.strip().partition(" ")
+            text = codecs.decode(arg, "unicode_escape")
+            if verb == "expect":
+                if not await self._wait_for(text, 20):
+                    self._write(f"script: timed out waiting for {text!r}")
+                    return
+            elif verb == "send":
+                self._input(text.encode())
+            elif verb == "wait" and arg:
+                await asyncio.sleep(float(arg))
+
+    async def _wait_for(self, text: str, timeout: float) -> bool:
+        for _ in range(int(timeout / 0.2)):
+            if text in "\n".join(self.buffer.display):
+                return True
+            await asyncio.sleep(0.2)
+        return False
+
+    def _input(self, data: bytes) -> None:
+        if self._proc is not None:
+            self._proc.stdin.write(data)
+        elif self._tn is not None:
+            self._tn.write(data.replace(b"\xff", b"\xff\xff"))
+        elif self._ser is not None:
+            self._ser.write(data)
+
+    def _live(self) -> bool:
+        return self._proc is not None or self._tn is not None or self._ser is not None
 
     async def _check_host_key(self, host: str, port: int, password: str | None) -> bool:
         entry = known_host_entry(host, port)
@@ -312,9 +404,9 @@ class SSHTerminal(Widget, can_focus=True):
     def _send(self, data: str) -> None:
         terminals = self.screen.query(SSHTerminal) if self.app.broadcast else [self]
         for term in terminals:
-            if term._proc is not None:
+            if term._live():
                 term._offset = 0
-                term._proc.stdin.write(data.encode())
+                term._input(data.encode())
 
     def _key_data(self, event: events.Key) -> str | None:
         key = event.key
