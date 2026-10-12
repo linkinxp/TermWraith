@@ -30,8 +30,9 @@ In the session picker, press Import and give a path to either:
 
 - the SecureCRT `Sessions` folder (`%APPDATA%\VanDyke\Config\Sessions`), or one of its `.ini` files
 - a `.reg` export of `HKEY_CURRENT_USER\Software\VanDyke\SecureCRT\Sessions`
+- SecureCRT's `Global.ini` (`%APPDATA%\VanDyke\Config`) to import the command-window colour scheme and the logging switch
 
-Folders, hosts, ports, usernames, key paths, serial ports and baud rates are imported; the `Default` session fills in missing values. Saved passwords are encrypted by SecureCRT and are not imported; re-enter them in termwraith.
+Folders, hosts, ports, usernames, key paths, serial ports and baud rates are imported; the `Default` session fills in missing values. Saved passwords are encrypted by SecureCRT and are not imported; re-enter them in termwraith. From `Global.ini` only the colour scheme and logging switch carry over; other SecureCRT settings have no termwraith equivalent yet.
 
 ## Keys
 

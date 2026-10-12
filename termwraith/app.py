@@ -38,7 +38,7 @@ from .store import (
     write_sessions,
 )
 from .resources import ResourcesScreen
-from .securecrt import load_securecrt
+from .securecrt import load_global_config, load_securecrt
 from .sftp import SftpScreen
 from .terminal import SSHTerminal
 from .vault import VaultError, forget, load_passwords, load_script, set_script
@@ -503,7 +503,7 @@ class Picker(ModalScreen[Session | None]):
     @on(Button.Pressed, "#import")
     def _import(self) -> None:
         self.app.push_screen(
-            TextPrompt("Import: termwraith JSON, SecureCRT .ini/.reg, or SecureCRT Sessions folder"),
+            TextPrompt("Import: termwraith JSON, SecureCRT Sessions folder/.ini/.reg, or Global.ini"),
             self._do_import,
         )
 
@@ -511,6 +511,9 @@ class Picker(ModalScreen[Session | None]):
         if not path:
             return
         source = Path(path).expanduser()
+        if source.name.lower() == "global.ini":
+            self._import_global(source)
+            return
         try:
             if source.is_dir() or source.suffix.lower() in (".ini", ".reg"):
                 incoming = load_securecrt(source)
@@ -525,6 +528,18 @@ class Picker(ModalScreen[Session | None]):
             self.app.with_master(lambda master: self._finish_import(added, master))
         else:
             self._finish_import(added, None)
+
+    def _import_global(self, source: Path) -> None:
+        try:
+            found = load_global_config(source)
+        except (OSError, ValueError) as exc:
+            self.notify(f"import failed: {exc}", severity="error")
+            return
+        if not found:
+            self.notify("no importable settings in that Global.ini", severity="warning")
+            return
+        write_config(replace(load_config(), **found))
+        self.notify(f"imported {', '.join(sorted(found))} from SecureCRT; new tabs use the new colours")
 
     def _finish_import(self, added: list[Session], master: str | None) -> None:
         for s in added:

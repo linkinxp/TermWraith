@@ -20,7 +20,12 @@ def _read_text(path: Path) -> str:
 
 def _parse_ini(text: str) -> dict[str, str | int]:
     values: dict[str, str | int] = {}
+    block: str | None = None
     for line in text.splitlines():
+        if block is not None and line.startswith(" "):
+            values[block] = f"{values[block]}\n{line.strip()}"
+            continue
+        block = None
         match = INI_LINE.match(line.strip())
         if not match:
             continue
@@ -29,6 +34,9 @@ def _parse_ini(text: str) -> dict[str, str | int]:
             values[key] = raw
         elif kind == "D":
             values[key] = int(raw, 16)
+        elif kind == "Z":
+            values[key] = raw
+            block = key
     return values
 
 
@@ -124,3 +132,28 @@ def load_securecrt(root: Path) -> list[Session]:
         if session is not None:
             sessions.append(session)
     return sessions
+
+
+def _hex_colour(value: str) -> str | None:
+    digits = value[:6]
+    if len(digits) != 6 or any(c not in "0123456789abcdefABCDEF" for c in digits):
+        return None
+    return f"#{digits.upper()}"
+
+
+def load_global_config(path: Path) -> dict[str, bool | str]:
+    values = _parse_ini(_read_text(path))
+    found: dict[str, bool | str] = {}
+    if "Enable Log File" in values:
+        found["log_enabled"] = bool(values["Enable Log File"])
+    scheme = values.get("Command Window Color Scheme")
+    for row in str(values.get("Color Schemes", "")).split("\n"):
+        fields = row.split(",")
+        if len(fields) < 19 or fields[0] != scheme:
+            continue
+        fg, bg = _hex_colour(fields[2]), _hex_colour(fields[10])
+        if fg and bg:
+            found["fg"] = fg
+            found["bg"] = bg
+        break
+    return found
