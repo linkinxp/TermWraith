@@ -554,6 +554,9 @@ class SSHTerminal(Widget, can_focus=True):
         show_cursor = self.has_focus and self._offset == 0 and not cursor.hidden
         sel = self._sel
         text = Text(no_wrap=True, overflow="crop", end="")
+        theme = self.app.current_theme
+        default_fg = self._fg or theme.foreground or "#A9B7C6"
+        default_bg = self._bg or theme.background or "#2B2B2B"
         for r in range(screen.lines):
             v = first + r
             row = self._row(v)
@@ -561,8 +564,8 @@ class SSHTerminal(Widget, can_focus=True):
                 ch = row[x]
                 at_cursor = show_cursor and x == cursor.x and r == cursor.y
                 selected = sel is not None and sel[0] <= (v, x) <= sel[1]
-                fg = self._fg if ch.fg == "default" else ch.fg
-                bg = self._bg if ch.bg == "default" else ch.bg
+                fg = default_fg if ch.fg == "default" else ch.fg
+                bg = default_bg if ch.bg == "default" else ch.bg
                 invert = ch.reverse != (at_cursor or selected or (v, x) in self._hits)
                 text.append(ch.data, _style(fg, bg, ch.bold, ch.italics, ch.underscore, invert))
             if r < screen.lines - 1:

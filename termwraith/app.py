@@ -285,11 +285,11 @@ class SettingsScreen(ModalScreen[None]):
             yield Select(THEME_CHOICES, value=self._config.theme, allow_blank=False, id="theme")
             with Horizontal(classes="pair"):
                 with Vertical(classes="field"):
-                    yield Label("Terminal text colour (#RRGGBB)")
-                    yield Input(value=self._config.fg, id="fg")
+                    yield Label("Terminal text colour (#RRGGBB, blank = app theme)")
+                    yield Input(value=self._config.fg, placeholder="app theme", id="fg")
                 with Vertical(classes="field"):
-                    yield Label("Terminal background (#RRGGBB)")
-                    yield Input(value=self._config.bg, id="bg")
+                    yield Label("Terminal background (#RRGGBB, blank = app theme)")
+                    yield Input(value=self._config.bg, placeholder="app theme", id="bg")
             yield Label("Macros, one per line: key = text  (e.g. f5 = ls -la\\r)")
             yield TextArea(
                 "\n".join(f"{m['key']} = {m['send']}" for m in self._config.macros), id="macros"
@@ -315,7 +315,7 @@ class SettingsScreen(ModalScreen[None]):
             return
         fg = self.query_one("#fg", Input).value.strip()
         bg = self.query_one("#bg", Input).value.strip()
-        if not (HEX_COLOUR.match(fg) and HEX_COLOUR.match(bg)):
+        if not all((not fg or HEX_COLOUR.match(fg), not bg or HEX_COLOUR.match(bg))):
             self.notify("Colours must be #RRGGBB", severity="error")
             return
         macros = []
