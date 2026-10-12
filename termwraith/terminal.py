@@ -26,7 +26,7 @@ from .store import (
 from .telnet import TelnetFilter
 from .vault import VaultError, load_passwords, save_passwords
 
-APP_KEYS = {"f2", "f3", "f6", "f7", "f8", "f9", "f10", "ctrl+b", "ctrl+f", "ctrl+pagedown", "ctrl+pageup"}
+APP_KEYS = {"f2", "f3", "f4", "f6", "f7", "f8", "f9", "f10","ctrl+b", "ctrl+f", "ctrl+pagedown", "ctrl+pageup"}
 SPECIAL_KEYS = {
     "enter": "\r",
     "tab": "\t",

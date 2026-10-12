@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "termwraith"
+version = "0.3.0"
+description = "SecureCRT-style SSH, telnet and serial terminal for the command line"
+requires-python = ">=3.10"
+dependencies = [
+    "textual>=8",
+    "asyncssh>=2.14",
+    "pyte>=0.8",
+    "cryptography>=42",
+    "pyserial>=3.5",
+]
+
+[project.scripts]
+termwraith = "termwraith.__main__:main"
+
+[tool.setuptools]
+packages = ["termwraith"]

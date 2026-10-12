@@ -35,6 +35,7 @@ from .store import (
     write_known_hosts,
     write_sessions,
 )
+from .resources import ResourcesScreen
 from .sftp import SftpScreen
 from .terminal import SSHTerminal
 from .vault import VaultError, load_passwords
@@ -480,6 +481,8 @@ class TermWraith(App):
     #sftp-box { width: 90%; height: 80%; border: thick $accent; background: $surface; padding: 1 2; }
     #sftp-list { height: 1fr; }
     SftpScreen { align: center middle; }
+    ResourcesScreen { align: center middle; }
+    #res-box { width: 70; height: auto; border: thick $accent; background: $surface; padding: 1 2; }
     #saved { height: 12; }
     #hosts-list { height: 12; }
     .buttons { height: auto; margin-top: 1; }
@@ -497,6 +500,7 @@ class TermWraith(App):
         Binding("f6", "split", "Split"),
         Binding("f7", "rename", "Rename"),
         Binding("f8", "search_next", "Next match"),
+        Binding("f4", "resources", "Resources"),
         Binding("f9", "sftp", "SFTP"),
         Binding("ctrl+f", "search", "Search"),
         Binding("ctrl+b", "broadcast", "Broadcast"),
@@ -568,6 +572,13 @@ class TermWraith(App):
         tabs = self.query_one(TabbedContent)
         if tabs.active:
             await tabs.remove_pane(tabs.active)
+
+    def action_resources(self) -> None:
+        term = self._focused_term()
+        if term is None or term._conn is None:
+            self.notify("Resources need an active SSH session", severity="warning")
+            return
+        self.push_screen(ResourcesScreen(term._conn))
 
     def action_sftp(self) -> None:
         term = self._focused_term()
