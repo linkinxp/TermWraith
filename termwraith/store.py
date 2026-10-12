@@ -27,6 +27,7 @@ class Session:
     protocol: str = "ssh"
     baud: int = 9600
     script: list[str] = field(default_factory=list)
+    has_script: bool = False
 
     @property
     def address(self) -> str:
@@ -50,7 +51,13 @@ def load_sessions(path: Path = SESSIONS_FILE) -> list[Session]:
 
 def write_sessions(sessions: list[Session], path: Path = SESSIONS_FILE) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps([asdict(s) for s in sessions], indent=2) + "\n")
+    entries = []
+    for s in sessions:
+        entry = asdict(s)
+        if s.has_script:
+            entry.pop("script")
+        entries.append(entry)
+    path.write_text(json.dumps(entries, indent=2) + "\n")
 
 
 def load_config(path: Path = CONFIG_FILE) -> Config:

@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -38,7 +39,7 @@ from .store import (
 from .resources import ResourcesScreen
 from .sftp import SftpScreen
 from .terminal import SSHTerminal
-from .vault import VaultError, load_passwords
+from .vault import VaultError, load_passwords, load_script, set_script
 
 DARCULA = Theme(
     name="darcula",
@@ -367,23 +368,44 @@ class Picker(ModalScreen[Session | None]):
     def _add(self, session: Session | None) -> None:
         if session is None:
             return
-        self._sessions.append(session)
-        write_sessions(self._sessions)
-        self._reload()
+        self._save(session, None, None)
 
     @on(Button.Pressed, "#edit")
     def _edit(self) -> None:
         index = self._selected_index()
         if index is None:
             return
-        self.app.push_screen(SessionForm(self._sessions[index]), lambda session: self._replace(index, session))
+        old = self._sessions[index]
 
-    def _replace(self, index: int, session: Session | None) -> None:
+        def open_form(master: str | None) -> None:
+            shown = replace(old, script=load_script(master, old.name)) if old.has_script else old
+            self.app.push_screen(SessionForm(shown), lambda session: self._save(session, old, index))
+
+        if old.has_script:
+            self.app.with_master(open_form)
+        else:
+            open_form(None)
+
+    def _save(self, session: Session | None, old: Session | None, index: int | None) -> None:
         if session is None:
             return
-        self._sessions[index] = session
-        write_sessions(self._sessions)
-        self._reload()
+        needs_vault = bool(session.script or (old and (old.has_script or old.script)))
+
+        def write(master: str | None) -> None:
+            if needs_vault:
+                set_script(master, session.name, session.script, old.name if old else None)
+            stored = replace(session, has_script=bool(session.script), script=[])
+            if index is None:
+                self._sessions.append(stored)
+            else:
+                self._sessions[index] = stored
+            write_sessions(self._sessions)
+            self._reload()
+
+        if needs_vault:
+            self.app.with_master(write)
+        else:
+            write(None)
 
     @on(Button.Pressed, "#settings")
     def _settings(self) -> None:
@@ -523,7 +545,41 @@ class TermWraith(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        if any(s.script for s in load_sessions()):
+            self.with_master(self._migrate_scripts, cancelled=self.action_connect)
+        else:
+            self.action_connect()
+
+    def _migrate_scripts(self, master: str | None) -> None:
+        sessions = load_sessions()
+        migrated = []
+        for s in sessions:
+            if s.script:
+                set_script(master, s.name, s.script)
+                s = replace(s, has_script=True, script=[])
+            migrated.append(s)
+        write_sessions(migrated)
         self.action_connect()
+
+    def with_master(self, then: Callable[[str | None], None], cancelled: Callable[[], None] | None = None) -> None:
+        if self._master is not None:
+            then(self._master)
+            return
+        self.push_screen(PasswordPrompt("Vault master password"), lambda pw: self._check_master(pw, then, cancelled))
+
+    def _check_master(self, master: str | None, then: Callable[[str | None], None], cancelled: Callable[[], None] | None) -> None:
+        if master is None:
+            if cancelled is not None:
+                cancelled()
+            return
+        try:
+            load_passwords(master)
+        except VaultError:
+            self.notify("wrong vault master password", severity="error")
+            self.with_master(then, cancelled)
+            return
+        self._master = master
+        then(master)
 
     def action_connect(self) -> None:
         self.push_screen(Picker(), self._open)
@@ -531,21 +587,14 @@ class TermWraith(App):
     def _open(self, target: Session | None) -> None:
         if target is None:
             return
-        if target.vault and self._master is None:
-            self.push_screen(PasswordPrompt("Vault master password"), lambda pw: self._unlock(target, pw))
+        if target.vault or target.has_script or target.script:
+            self.with_master(lambda master: self._launch(target, master))
             return
         self.run_worker(self._add_tab(target))
 
-    def _unlock(self, target: Session, master: str | None) -> None:
-        if master is None:
-            return
-        try:
-            load_passwords(master)
-        except VaultError:
-            self.notify("wrong vault master password", severity="error")
-            self._open(target)
-            return
-        self._master = master
+    def _launch(self, target: Session, master: str | None) -> None:
+        if target.has_script:
+            target = replace(target, script=load_script(master, target.name))
         self.run_worker(self._add_tab(target))
 
     async def _add_tab(self, target: Session) -> None:

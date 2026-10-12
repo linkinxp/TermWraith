@@ -36,3 +36,23 @@ def save_passwords(passwords: dict[str, str], master: str) -> None:
     VAULT_FILE.parent.mkdir(parents=True, exist_ok=True)
     VAULT_FILE.write_text(json.dumps({"salt": base64.b64encode(salt).decode(), "token": token}) + "\n")
     VAULT_FILE.chmod(0o600)
+
+
+def _script_key(name: str) -> str:
+    return f"script:{name}"
+
+
+def load_script(master: str, name: str) -> list[str]:
+    text = load_passwords(master).get(_script_key(name), "")
+    return text.splitlines()
+
+
+def set_script(master: str, name: str, lines: list[str], old_name: str | None = None) -> None:
+    passwords = load_passwords(master)
+    if old_name is not None:
+        passwords.pop(_script_key(old_name), None)
+    if lines:
+        passwords[_script_key(name)] = "\n".join(lines)
+    else:
+        passwords.pop(_script_key(name), None)
+    save_passwords(passwords, master)
