@@ -114,56 +114,66 @@ class SessionForm(ModalScreen[Session | None]):
 
     def compose(self) -> ComposeResult:
         s = self._session
-        with VerticalScroll(id="box"):
-            yield Label("Edit saved session" if s else "New saved session")
-            yield Input(value=s.name if s else "", placeholder="name (optional)", id="name")
-            yield Input(value=s.host if s else "", placeholder="host, e.g. 10.0.0.5", id="host")
-            yield Input(value=s.user if s else "", placeholder="user", id="user")
-            yield Input(value=str(s.port) if s else "22", placeholder="port", id="port")
-            yield Input(
-                value=(s.key or "") if s else "",
-                placeholder="key file (optional, e.g. ~/.ssh/id_ed25519)",
-                id="key",
-            )
-            yield Input(
-                value=(s.cert or "") if s else "",
-                placeholder="certificate file (optional, e.g. id_ed25519-cert.pub)",
-                id="cert",
-            )
-            yield Input(
-                value=s.folder if s else self._folder,
-                placeholder="folder, e.g. Clients/Acme (optional)",
-                id="folder",
-            )
-            yield Input(
-                value=s.jump if s else "",
-                placeholder="jump host user@host[:port] (optional)",
-                id="jump",
-            )
-            yield Input(
-                value=", ".join(s.forwards) if s else "",
-                placeholder="forwards L:8080:db:5432, R:9000:localhost:3000, D:1080",
-                id="forwards",
-            )
-            yield Select(
-                [("SSH", "ssh"), ("Telnet", "telnet"), ("Serial", "serial")],
-                value=s.protocol if s else "ssh",
-                allow_blank=False,
-                id="protocol",
-            )
-            yield Input(
-                value=str(s.baud) if s else "9600",
-                placeholder="serial baud rate (serial only)",
-                id="baud",
-            )
-            yield Label("Logon script, one step per line: expect TEXT / send TEXT / wait SECONDS")
-            yield TextArea("\n".join(s.script) if s else "", id="script")
-            with Horizontal(classes="row"):
-                yield Switch(value=s.reconnect if s else False, id="reconnect")
-                yield Label("Auto-reconnect")
-            with Horizontal(classes="row"):
-                yield Switch(value=s.vault if s else False, id="vault")
-                yield Label("Keep password in encrypted vault")
+        with Vertical(id="form-box") as box:
+            box.border_title = "Edit session" if s else "New session"
+            with VerticalScroll(id="form-body"):
+                with Horizontal(classes="pair"):
+                    with Vertical(classes="field"):
+                        yield Label("Name")
+                        yield Input(value=s.name if s else "", placeholder="optional", id="name")
+                    with Vertical(classes="field"):
+                        yield Label("Folder")
+                        yield Input(value=s.folder if s else self._folder, placeholder="Clients/Acme", id="folder")
+                with Horizontal(classes="pair"):
+                    with Vertical(classes="field"):
+                        yield Label("Protocol")
+                        yield Select(
+                            [("SSH", "ssh"), ("Telnet", "telnet"), ("Serial", "serial")],
+                            value=s.protocol if s else "ssh",
+                            allow_blank=False,
+                            id="protocol",
+                        )
+                    with Vertical(classes="field"):
+                        yield Label("Baud rate (serial)")
+                        yield Input(value=str(s.baud) if s else "9600", placeholder="9600", id="baud")
+                with Horizontal(classes="pair"):
+                    with Vertical(classes="field wide"):
+                        yield Label("Host")
+                        yield Input(value=s.host if s else "", placeholder="10.0.0.5", id="host")
+                    with Vertical(classes="field narrow"):
+                        yield Label("Port")
+                        yield Input(value=str(s.port) if s else "22", placeholder="22", id="port")
+                with Horizontal(classes="pair"):
+                    with Vertical(classes="field"):
+                        yield Label("User")
+                        yield Input(value=s.user if s else "", placeholder="deploy", id="user")
+                    with Vertical(classes="field"):
+                        yield Label("Key file")
+                        yield Input(value=(s.key or "") if s else "", placeholder="~/.ssh/id_ed25519", id="key")
+                with Horizontal(classes="pair"):
+                    with Vertical(classes="field"):
+                        yield Label("Certificate")
+                        yield Input(value=(s.cert or "") if s else "", placeholder="id_ed25519-cert.pub", id="cert")
+                    with Vertical(classes="field"):
+                        yield Label("Jump host")
+                        yield Input(value=s.jump if s else "", placeholder="user@bastion:22", id="jump")
+                with Vertical(classes="field full"):
+                    yield Label("Forwards")
+                    yield Input(
+                        value=", ".join(s.forwards) if s else "",
+                        placeholder="L:8080:db:5432, R:9000:localhost:3000, D:1080",
+                        id="forwards",
+                    )
+                with Vertical(classes="field full"):
+                    yield Label("Logon script  expect TEXT / send TEXT / wait SECONDS, one per line")
+                    yield TextArea("\n".join(s.script) if s else "", id="script")
+                with Horizontal(classes="pair switches"):
+                    with Horizontal(classes="switch"):
+                        yield Switch(value=s.reconnect if s else False, id="reconnect")
+                        yield Label("Auto-reconnect")
+                    with Horizontal(classes="switch"):
+                        yield Switch(value=s.vault if s else False, id="vault")
+                        yield Label("Store password in vault")
             with Horizontal(classes="buttons"):
                 yield Button("Save", variant="success", id="save")
                 yield Button("Cancel", id="cancel")
@@ -336,7 +346,7 @@ class Picker(ModalScreen[Session | None]):
         ordered = sorted(enumerate(self._sessions), key=lambda pair: (pair[1].folder.lower(), pair[1].name.lower()))
         for index, session in ordered:
             parent = self._folder_node(folders, session.folder)
-            parent.add_leaf(f"{session.name}  ({session.user}@{session.host}:{session.port})", data=index)
+            parent.add_leaf(f"{session.name}  ({session.address})", data=index)
 
     def _folder_node(self, folders: dict[str, TreeNode], path: str) -> TreeNode:
         if path not in folders:
@@ -502,7 +512,18 @@ class TermWraith(App):
         background: $surface;
         padding: 1 2;
     }
-    #script { height: 6; }
+    #form-box { width: 96; height: 95%; border: round $primary; border-title-color: $accent; border-title-style: bold; background: $surface; padding: 1 2; }
+    #form-body { height: 1fr; }
+    .pair { height: auto; }
+    .field { width: 1fr; height: auto; margin-right: 2; }
+    .field.narrow { width: 14; }
+    .field.full { width: 100%; margin-right: 0; }
+    .field Label { color: $text-muted; }
+    .switches { margin-top: 1; height: auto; }
+    .switch { width: 1fr; height: auto; }
+    .switch Label { margin-top: 1; color: $text; }
+    .switch Switch { margin-top: 0; }
+    #script { height: 4; }
     #sftp-box { width: 90%; height: 80%; border: thick $accent; background: $surface; padding: 1 2; }
     #sftp-list { height: 1fr; }
     SftpScreen { align: center middle; }
