@@ -12,6 +12,7 @@ from textual import events
 from textual.message import Message
 from textual.widget import Widget
 
+from .highlight import colours_for
 from .store import (
     KNOWN_HOSTS_FILE,
     Session,
@@ -90,6 +91,7 @@ class SSHTerminal(Widget, can_focus=True):
         self.master = master
         config = load_config()
         self._fg, self._bg = config.schemes.get(target.colour_scheme) or (config.fg, config.bg)
+        self._highlight = config.highlight_words
         self._macros = {m["key"]: codecs.decode(m["send"], "unicode_escape") for m in config.macros}
         self.buffer = pyte.HistoryScreen(80, 24, history=target.scrollback)
         self._stream = pyte.ByteStream(self.buffer)
@@ -560,11 +562,14 @@ class SSHTerminal(Widget, can_focus=True):
         for r in range(screen.lines):
             v = first + r
             row = self._row(v)
+            hl = colours_for("".join(row[x].data for x in range(screen.columns))) if self._highlight else None
             for x in range(screen.columns):
                 ch = row[x]
                 at_cursor = show_cursor and x == cursor.x and r == cursor.y
                 selected = sel is not None and sel[0] <= (v, x) <= sel[1]
                 fg = default_fg if ch.fg == "default" else ch.fg
+                if hl and ch.fg == "default" and hl[x]:
+                    fg = hl[x]
                 bg = default_bg if ch.bg == "default" else ch.bg
                 invert = ch.reverse != (at_cursor or selected or (v, x) in self._hits)
                 text.append(ch.data, _style(fg, bg, ch.bold, ch.italics, ch.underscore, invert))

@@ -54,6 +54,10 @@ Settings offers the built-in Textual themes plus the t-ui palettes from [M4dGun/
 
 The terminal text and background follow the selected theme. To use fixed colours instead, enter `#RRGGBB` values in Settings; leave them blank to follow the theme.
 
+## Network highlights
+
+Terminal output is coloured for network terms: IPv4 and IPv6 addresses, MAC addresses and interface names (blue and purple), protocols such as TCP, UDP, ARP and DNS (teal), up or established states (green), down, refused, unreachable, timeout and denied (red), and warnings or retries (yellow). Only text with the default colour is recoloured, so programs' own colours are kept. Turn it off with "Highlight network words" in Settings.
+
 ## Keys
 
 - F2 connect, F3 close tab, F4 remote resources (SSH), F6 split pane, F7 rename tab

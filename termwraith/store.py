@@ -41,6 +41,7 @@ class Session:
 @dataclass(frozen=True)
 class Config:
     log_enabled: bool = False
+    highlight_words: bool = True
     log_dir: str = str(Path.home() / ".local/state/termwraith/logs")
     theme: str = "darcula"
     fg: str = ""

@@ -277,6 +277,8 @@ class SettingsScreen(ModalScreen[None]):
             with Horizontal(classes="row"):
                 yield Switch(value=self._config.log_enabled, id="log-enabled")
                 yield Label("Log session output")
+                yield Switch(value=self._config.highlight_words, id="highlight-words")
+                yield Label("Highlight network words")
             yield Label("Log directory")
             yield Input(value=self._config.log_dir, id="log-dir")
             yield Label("Log filename, placeholders {session} {host} {stamp}")
@@ -285,10 +287,10 @@ class SettingsScreen(ModalScreen[None]):
             yield Select(THEME_CHOICES, value=self._config.theme, allow_blank=False, id="theme")
             with Horizontal(classes="pair"):
                 with Vertical(classes="field"):
-                    yield Label("Terminal text colour (#RRGGBB, blank = app theme)")
+                    yield Label("Text colour (blank = theme)")
                     yield Input(value=self._config.fg, placeholder="app theme", id="fg")
                 with Vertical(classes="field"):
-                    yield Label("Terminal background (#RRGGBB, blank = app theme)")
+                    yield Label("Background (blank = theme)")
                     yield Input(value=self._config.bg, placeholder="app theme", id="bg")
             yield Label("Macros, one per line: key = text  (e.g. f5 = ls -la\\r)")
             yield TextArea(
@@ -333,6 +335,7 @@ class SettingsScreen(ModalScreen[None]):
             replace(
                 self._config,
                 log_enabled=enabled,
+                highlight_words=self.query_one("#highlight-words", Switch).value,
                 log_dir=directory,
                 log_template=template,
                 theme=theme,
