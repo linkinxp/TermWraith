@@ -38,6 +38,7 @@ from .store import (
     write_sessions,
 )
 from .resources import ResourcesScreen
+from .securecrt import load_securecrt
 from .sftp import SftpScreen
 from .terminal import SSHTerminal
 from .vault import VaultError, forget, load_passwords, load_script, set_script
@@ -501,13 +502,20 @@ class Picker(ModalScreen[Session | None]):
 
     @on(Button.Pressed, "#import")
     def _import(self) -> None:
-        self.app.push_screen(TextPrompt("Import sessions from file"), self._do_import)
+        self.app.push_screen(
+            TextPrompt("Import: termwraith JSON, SecureCRT .ini/.reg, or SecureCRT Sessions folder"),
+            self._do_import,
+        )
 
     def _do_import(self, path: str | None) -> None:
         if not path:
             return
+        source = Path(path).expanduser()
         try:
-            incoming = load_sessions(Path(path).expanduser())
+            if source.is_dir() or source.suffix.lower() in (".ini", ".reg"):
+                incoming = load_securecrt(source)
+            else:
+                incoming = load_sessions(source)
         except (OSError, ValueError, TypeError, KeyError) as exc:
             self.notify(f"import failed: {exc}", severity="error")
             return
