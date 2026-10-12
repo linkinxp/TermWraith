@@ -42,6 +42,7 @@ from .resources import ResourcesScreen
 from .securecrt import load_global_config, load_securecrt
 from .sftp import SftpScreen
 from .terminal import SSHTerminal
+from .tui_themes import tui_themes
 from .vault import VaultError, forget, load_passwords, load_script, set_script
 
 DARCULA = Theme(
@@ -58,7 +59,8 @@ DARCULA = Theme(
     success="#6A8759",
     dark=True,
 )
-DARK_THEMES = ["darcula", "nord", "gruvbox", "catppuccin-mocha", "dracula", "tokyo-night", "monokai", "rose-pine", "solarized-dark", "atom-one-dark"]
+TUI_THEMES = tui_themes()
+DARK_THEMES = ["darcula", "nord", "gruvbox", "catppuccin-mocha", "dracula", "tokyo-night", "monokai", "rose-pine", "solarized-dark", "atom-one-dark", *(t.name for t in TUI_THEMES)]
 LIGHT_THEMES = ["textual-light", "catppuccin-latte", "solarized-light", "rose-pine-dawn", "atom-one-light"]
 THEME_CHOICES = [
     (f"{name.replace('-', ' ').title()}  (dark)", name) for name in DARK_THEMES
@@ -749,6 +751,8 @@ class TermWraith(App):
         self._master: str | None = None
         self.broadcast = False
         self.register_theme(DARCULA)
+        for theme in TUI_THEMES:
+            self.register_theme(theme)
         theme = load_config().theme
         self.theme = theme if theme in self.available_themes else DARCULA.name
 

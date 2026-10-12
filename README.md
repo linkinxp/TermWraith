@@ -48,6 +48,10 @@ Folders, hosts, ports, usernames, key paths, serial ports and baud rates are imp
 
 Set the log directory and filename template in Settings. The template accepts `{session}`, `{host}` and `{stamp}` (timestamp), for example `{host}_{session}_{stamp}.log`. Unsafe characters are replaced with `_`.
 
+## Themes
+
+Settings offers the built-in Textual themes plus the t-ui palettes from [M4dGun/t-ui_themes](https://github.com/M4dGun/t-ui_themes) (GPL-3.0): Dracula v1 and v2, NetHunter v1 and v2, GRID, T-ui Dev 2 and 2.3, Girls Frontline UMP45, Koban, WallX, Tomboy Girl and Mellogram. Their colours are mapped to the nearest Textual theme fields, so they are close to the originals rather than exact copies.
+
 ## Keys
 
 - F2 connect, F3 close tab, F4 remote resources (SSH), F6 split pane, F7 rename tab
