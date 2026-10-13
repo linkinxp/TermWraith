@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from textual import on
-from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult, SystemCommand
 from textual.events import Key
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -42,7 +42,8 @@ from .resources import ResourcesScreen
 from .securecrt import load_global_config, load_securecrt
 from .sftp import SftpScreen
 from .terminal import SSHTerminal
-from .plugins import load_plugins
+from . import plugins
+from .plugins import Context, load_plugins
 from .tui_themes import tui_themes
 from .vault import VaultError, forget, load_passwords, load_script, set_script
 
@@ -771,6 +772,9 @@ class TermWraith(App):
     def on_mount(self) -> None:
         for error in load_plugins():
             self.notify(f"Plugin not loaded, {error}", severity="error", timeout=10)
+        for index, (title, _fn, key) in enumerate(plugins.commands):
+            if key:
+                self.bind(key, f"plugin_command({index})", description=title, show=False)
         if any(s.script for s in load_sessions()):
             self.with_master(self._migrate_scripts, cancelled=self.action_connect)
         else:
@@ -854,6 +858,15 @@ class TermWraith(App):
             self.notify("Resources need an active SSH session", severity="warning")
             return
         self.push_screen(ResourcesScreen(term._conn))
+
+    def action_plugin_command(self, index: int) -> None:
+        _title, fn, _key = plugins.commands[index]
+        fn(Context(self, self._focused_term()))
+
+    def get_system_commands(self, screen):
+        yield from super().get_system_commands(screen)
+        for index, (title, _fn, _key) in enumerate(plugins.commands):
+            yield SystemCommand(title, title, lambda index=index: self.action_plugin_command(index))
 
     def action_sftp(self) -> None:
         term = self._focused_term()

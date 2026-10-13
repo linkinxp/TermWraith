@@ -435,7 +435,7 @@ class SSHTerminal(Widget, can_focus=True):
             event.prevent_default()
             self._send(self._macros[event.key])
             return
-        if event.key in APP_KEYS:
+        if event.key in APP_KEYS or event.key in plugins.bound_keys():
             return
         data = self._key_data(event)
         if data is None:

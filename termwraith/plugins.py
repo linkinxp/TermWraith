@@ -8,6 +8,21 @@ from .store import SESSIONS_FILE
 PLUGINS_DIR = SESSIONS_FILE.parent / "plugins"
 
 _hooks: dict[str, list[Callable]] = defaultdict(list)
+commands: list[tuple[str, Callable, str | None]] = []
+
+
+class Context:
+    def __init__(self, app, term) -> None:
+        self._app = app
+        self._term = term
+        self.session = term.target.name if term is not None else None
+
+    def send(self, text: str) -> None:
+        if self._term is not None:
+            self._term._input(text.encode())
+
+    def notify(self, message: str) -> None:
+        self._app.notify(message)
 
 
 class PluginAPI:
@@ -19,6 +34,9 @@ class PluginAPI:
 
     def on_close(self, fn: Callable[[str], None]) -> None:
         _hooks["close"].append(fn)
+
+    def command(self, title: str, fn: Callable[[Context], None], key: str | None = None) -> None:
+        commands.append((title, fn, key))
 
 
 def load_plugins(directory: Path = PLUGINS_DIR) -> list[str]:
@@ -34,6 +52,10 @@ def load_plugins(directory: Path = PLUGINS_DIR) -> list[str]:
         except Exception as exc:
             errors.append(f"{path.name}: {exc}")
     return errors
+
+
+def bound_keys() -> set[str]:
+    return {key for _title, _fn, key in commands if key}
 
 
 def wants(event: str) -> bool:
