@@ -60,23 +60,12 @@ Terminal output is coloured for network terms: IPv4 and IPv6 addresses, MAC addr
 
 ## Plugins
 
-Plugins are Python files in `~/.config/termwraith/plugins/` (or next to `TERMWRAITH_SESSIONS` if set). Each file defines `register(api)` and subscribes to events:
-
-    def register(api):
-        api.on_connect(lambda session: ...)            # session name
-        api.on_output(lambda session, text: ...)       # session name, decoded output chunk
-        api.on_close(lambda session: ...)              # session name
-
-Commands add an entry to the command palette (Ctrl+P) and can have a key. The function receives a context with the active session name, `send(text)` to type into it and `notify(message)`:
+Plugins are Python files in the plugins folder that react to session events (connect, output, close) and add commands to the command palette (Ctrl+P), optionally with a key. Install one by putting a `.py` file in `~/.config/termwraith/plugins/` and restarting termwraith. Plugins run with your full user rights, so only install ones you trust. The full guide, with the API reference and examples, is in [docs/PLUGINS.md](docs/PLUGINS.md).
 
     def register(api):
         def uptime(ctx):
             ctx.send("uptime\r")
         api.command("Send uptime", uptime, key="ctrl+k")
-
-A plugin key takes priority over the terminal, so it cannot be used to type into a session. Keys already used by termwraith or by the macros in Settings may conflict.
-
-Plugins run with your full user rights, so only install plugins you trust. A plugin that fails to load is reported when termwraith starts, and errors raised inside event handlers are ignored so a plugin cannot stop a session.
 
 ## Keys
 
