@@ -42,6 +42,7 @@ from .resources import ResourcesScreen
 from .securecrt import load_global_config, load_securecrt
 from .sftp import SftpScreen
 from .terminal import SSHTerminal
+from .plugins import load_plugins
 from .tui_themes import tui_themes
 from .vault import VaultError, forget, load_passwords, load_script, set_script
 
@@ -768,6 +769,8 @@ class TermWraith(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        for error in load_plugins():
+            self.notify(f"Plugin not loaded, {error}", severity="error", timeout=10)
         if any(s.script for s in load_sessions()):
             self.with_master(self._migrate_scripts, cancelled=self.action_connect)
         else:

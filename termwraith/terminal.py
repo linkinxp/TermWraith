@@ -12,6 +12,7 @@ from textual import events
 from textual.message import Message
 from textual.widget import Widget
 
+from . import plugins
 from .highlight import colours_for
 from .store import (
     KNOWN_HOSTS_FILE,
@@ -201,6 +202,7 @@ class SSHTerminal(Widget, can_focus=True):
 
         cols, rows = self._dims()
         self.buffer.resize(rows, cols)
+        plugins.fire("connect", t.name)
         log = None
         try:
             log = self._open_log()
@@ -214,6 +216,7 @@ class SSHTerminal(Widget, can_focus=True):
                 if log is not None:
                     log.write(data)
                     log.flush()
+                self._emit_output(data)
                 self.refresh()
         except (OSError, asyncssh.Error) as exc:
             self._write(f"session error: {exc}")
@@ -223,6 +226,7 @@ class SSHTerminal(Widget, can_focus=True):
                 log.close()
         self._close_transport()
         self._write("session closed")
+        plugins.fire("close", self.target.name)
         self._schedule_reconnect()
 
     async def _session_plain(self) -> None:
@@ -239,6 +243,7 @@ class SSHTerminal(Widget, can_focus=True):
 
                 self._ser = await asyncio.to_thread(serial.Serial, t.host, t.baud, timeout=0.2)
                 chunks = self._serial_chunks(self._ser)
+            plugins.fire("connect", t.name)
             self.refresh()
             if t.script:
                 self.run_worker(self._run_script(), exit_on_error=False)
@@ -248,6 +253,7 @@ class SSHTerminal(Widget, can_focus=True):
                 if log is not None:
                     log.write(data)
                     log.flush()
+                self._emit_output(data)
                 if telnet_password and self._last_line().lower().endswith("password:"):
                     self._input((telnet_password + "\r").encode())
                     telnet_password = None
@@ -259,6 +265,7 @@ class SSHTerminal(Widget, can_focus=True):
             if log is not None:
                 log.close()
         self._write("session closed")
+        plugins.fire("close", t.name)
         self._schedule_reconnect()
 
     async def _telnet_chunks(
@@ -379,6 +386,10 @@ class SSHTerminal(Widget, can_focus=True):
 
     def _dims(self) -> tuple[int, int]:
         return self.size.width or 80, self.size.height or 24
+
+    def _emit_output(self, data: bytes) -> None:
+        if plugins.wants("output"):
+            plugins.fire("output", self.target.name, data.decode("utf-8", errors="replace"))
 
     def _write(self, text: str) -> None:
         self._stream.feed(f"\r\n[termwraith] {text}\r\n".encode())

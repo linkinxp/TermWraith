@@ -58,6 +58,17 @@ The terminal text and background follow the selected theme. To use fixed colours
 
 Terminal output is coloured for network terms: IPv4 and IPv6 addresses, MAC addresses and interface names (blue and purple), protocols such as TCP, UDP, ARP and DNS (teal), up or established states (green), down, refused, unreachable, timeout and denied (red), and warnings or retries (yellow). Only text with the default colour is recoloured, so programs' own colours are kept. Turn it off with "Highlight network words" in Settings.
 
+## Plugins
+
+Plugins are Python files in `~/.config/termwraith/plugins/` (or next to `TERMWRAITH_SESSIONS` if set). Each file defines `register(api)` and subscribes to events:
+
+    def register(api):
+        api.on_connect(lambda session: ...)            # session name
+        api.on_output(lambda session, text: ...)       # session name, decoded output chunk
+        api.on_close(lambda session: ...)              # session name
+
+Plugins run with your full user rights, so only install plugins you trust. A plugin that fails to load is reported when termwraith starts, and errors raised inside event handlers are ignored so a plugin cannot stop a session.
+
 ## Keys
 
 - F2 connect, F3 close tab, F4 remote resources (SSH), F6 split pane, F7 rename tab
