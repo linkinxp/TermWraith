@@ -111,6 +111,9 @@ class SSHTerminal(Widget, can_focus=True):
         self._hits: set[tuple[int, int]] = set()
         self._matches: list[tuple[int, int]] = []
         self._match = -1
+        self._refresh_pending = False
+        self._cache: dict = {}
+        self._cache_stamp = None
 
     def on_mount(self) -> None:
         self.connect()
@@ -217,7 +220,7 @@ class SSHTerminal(Widget, can_focus=True):
                     log.write(data)
                     log.flush()
                 self._emit_output(data)
-                self.refresh()
+                self._refresh_soon()
         except (OSError, asyncssh.Error) as exc:
             self._write(f"session error: {exc}")
         finally:
@@ -257,7 +260,7 @@ class SSHTerminal(Widget, can_focus=True):
                 if telnet_password and self._last_line().lower().endswith("password:"):
                     self._input((telnet_password + "\r").encode())
                     telnet_password = None
-                self.refresh()
+                self._refresh_soon()
         except (OSError, asyncssh.Error) as exc:
             self._write(f"connection failed: {exc}")
         finally:
@@ -559,31 +562,80 @@ class SSHTerminal(Widget, can_focus=True):
         self._offset = max(0, min(top, top - (v - self.buffer.lines // 2)))
         self.refresh()
 
+    def _refresh_soon(self) -> None:
+        if not self._refresh_pending:
+            self._refresh_pending = True
+            self.set_timer(1 / 45, self._flush_refresh)
+
+    def _flush_refresh(self) -> None:
+        self._refresh_pending = False
+        self.refresh()
+
+    def _build_row(self, v: int, r: int, row, cursor_x: int | None, defaults: tuple[str, str]) -> Text:
+        screen = self.buffer
+        default_fg, default_bg = defaults
+        sel = self._sel
+        hits = self._hits
+        hl = colours_for("".join(row[x].data for x in range(screen.columns))) if self._highlight else None
+        text = Text(no_wrap=True, overflow="crop", end="")
+        run_key = None
+        run: list[str] = []
+        for x in range(screen.columns):
+            ch = row[x]
+            selected = sel is not None and sel[0] <= (v, x) <= sel[1]
+            fg = default_fg if ch.fg == "default" else ch.fg
+            if hl and ch.fg == "default" and hl[x]:
+                fg = hl[x]
+            bg = default_bg if ch.bg == "default" else ch.bg
+            invert = ch.reverse != (x == cursor_x or selected or (v, x) in hits)
+            key = (fg, bg, ch.bold, ch.italics, ch.underscore, invert)
+            if key != run_key:
+                if run:
+                    text.append("".join(run), _style(*run_key))
+                run_key = key
+                run = []
+            run.append(ch.data)
+        if run:
+            text.append("".join(run), _style(*run_key))
+        return text
+
     def render(self) -> Text:
         screen = self.buffer
         cursor = screen.cursor
         top = len(screen.history.top)
         first = top - self._offset
         show_cursor = self.has_focus and self._offset == 0 and not cursor.hidden
-        sel = self._sel
-        text = Text(no_wrap=True, overflow="crop", end="")
         theme = self.app.current_theme
-        default_fg = self._fg or theme.foreground or "#A9B7C6"
-        default_bg = self._bg or theme.background or "#2B2B2B"
+        defaults = (self._fg or theme.foreground or "#A9B7C6", self._bg or theme.background or "#2B2B2B")
+        stamp = (defaults, screen.columns, self._highlight)
+        if stamp != self._cache_stamp:
+            self._cache.clear()
+            self._cache_stamp = stamp
+        sel = self._sel
+        special_rows = {v for v, _ in self._hits}
+        if sel is not None:
+            special_rows.update(range(sel[0][0], sel[1][0] + 1))
+        dirty = screen.dirty
+        if len(self._cache) > 3000:
+            self._cache.clear()
+        text = Text(no_wrap=True, overflow="crop", end="")
         for r in range(screen.lines):
             v = first + r
             row = self._row(v)
-            hl = colours_for("".join(row[x].data for x in range(screen.columns))) if self._highlight else None
-            for x in range(screen.columns):
-                ch = row[x]
-                at_cursor = show_cursor and x == cursor.x and r == cursor.y
-                selected = sel is not None and sel[0] <= (v, x) <= sel[1]
-                fg = default_fg if ch.fg == "default" else ch.fg
-                if hl and ch.fg == "default" and hl[x]:
-                    fg = hl[x]
-                bg = default_bg if ch.bg == "default" else ch.bg
-                invert = ch.reverse != (at_cursor or selected or (v, x) in self._hits)
-                text.append(ch.data, _style(fg, bg, ch.bold, ch.italics, ch.underscore, invert))
+            at_cursor = show_cursor and r == cursor.y
+            key = id(row) if v < top else ("L", v - top)
+            if at_cursor or v in special_rows:
+                self._cache.pop(key, None)
+                part = self._build_row(v, r, row, cursor.x if at_cursor else None, defaults)
+            else:
+                entry = self._cache.get(key)
+                if entry is not None and entry[0] is row and not (v >= top and (v - top) in dirty):
+                    part = entry[1]
+                else:
+                    part = self._build_row(v, r, row, None, defaults)
+                    self._cache[key] = (row, part)
+            text.append_text(part)
             if r < screen.lines - 1:
                 text.append("\n")
+        dirty.clear()
         return text

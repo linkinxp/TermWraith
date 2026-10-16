@@ -6,6 +6,7 @@ from pathlib import Path
 from textual import on
 from textual.app import App, ComposeResult, SystemCommand
 from textual.events import Key
+from textual.message import Message
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
@@ -13,11 +14,11 @@ from textual.theme import Theme
 from textual.widgets import (
     Button,
     Footer,
-    Header,
     Input,
     Label,
     OptionList,
     Select,
+    Static,
     Switch,
     TabbedContent,
     TabPane,
@@ -46,6 +47,21 @@ from . import plugins
 from .plugins import Context, load_plugins
 from .tui_themes import tui_themes
 from .vault import VaultError, forget, load_passwords, load_script, set_script
+
+TERMIX = Theme(
+    name="termix",
+    primary="#1447E6",
+    secondary="#A4A4A4",
+    accent="#F59145",
+    foreground="#FAFAFA",
+    background="#0C0D0B",
+    surface="#121311",
+    panel="#232323",
+    warning="#E8C547",
+    error="#FF6467",
+    success="#22C55E",
+    dark=True,
+)
 
 DARCULA = Theme(
     name="darcula",
@@ -397,29 +413,31 @@ class HostsScreen(ModalScreen[None]):
         self.dismiss(None)
 
 
-class Picker(ModalScreen[Session | None]):
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+class HostSidebar(Vertical):
+    class Open(Message):
+        def __init__(self, target: Session) -> None:
+            super().__init__()
+            self.target = target
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
         self._sessions = load_sessions()
         self._recall = -1
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="box") as box:
-            box.border_title = "Sessions"
-            yield Input(placeholder="Search sessions", id="filter")
-            yield Tree("Sessions", id="saved")
-            with Horizontal(classes="buttons"):
-                yield Button("New", variant="primary", id="new")
-                yield Button("Edit", id="edit")
-                yield Button("Delete", variant="error", id="delete")
-            with Horizontal(classes="buttons second"):
-                yield Button("Hosts", id="hosts")
-                yield Button("Export", id="export")
-                yield Button("Import", id="import")
-                yield Button("Settings", id="settings")
-            yield Input(placeholder="Quick connect  deploy@10.0.0.5:2222", id="quick")
+        yield Label("HOSTS", id="side-title")
+        yield Input(placeholder="Search hosts", id="filter")
+        yield Tree("Hosts", id="saved")
+        with Horizontal(classes="buttons"):
+            yield Button("New", variant="primary", id="new")
+            yield Button("Edit", id="edit")
+            yield Button("Delete", variant="error", id="delete")
+        with Horizontal(classes="buttons"):
+            yield Button("Hosts", id="hosts")
+            yield Button("Import", id="import")
+            yield Button("Export", id="export")
+            yield Button("Config", id="settings")
+        yield Input(placeholder="Quick connect  user@host:22", id="quick")
 
     def on_mount(self) -> None:
         self._reload()
@@ -460,7 +478,7 @@ class Picker(ModalScreen[Session | None]):
     @on(Tree.NodeSelected)
     def _picked(self, event: Tree.NodeSelected) -> None:
         if isinstance(event.node.data, int):
-            self.dismiss(self._sessions[event.node.data])
+            self.post_message(self.Open(self._sessions[event.node.data]))
 
     @on(Button.Pressed, "#new")
     def _new(self) -> None:
@@ -630,20 +648,17 @@ class Picker(ModalScreen[Session | None]):
             return
         config = load_config()
         write_config(replace(config, recent=[value, *(v for v in config.recent if v != value)][:10]))
-        self.dismiss(target)
+        self.post_message(self.Open(target))
 
     def on_key(self, event: Key) -> None:
         quick = self.query_one("#quick", Input)
         recent = load_config().recent
-        if self.focused is not quick or event.key not in ("up", "down") or not recent:
+        if self.app.focused is not quick or event.key not in ("up", "down") or not recent:
             return
         self._recall = max(-1, min(len(recent) - 1, self._recall + (1 if event.key == "up" else -1)))
         quick.value = recent[self._recall] if self._recall >= 0 else ""
         quick.cursor_position = len(quick.value)
         event.stop()
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
 
 
 class PasswordPrompt(ModalScreen[str | None]):
@@ -686,6 +701,17 @@ class SearchResults(ModalScreen[int | None]):
         self.dismiss(None)
 
 
+HOME_TEXT = """[b]termwraith[/b]
+
+SSH, telnet and serial from your terminal.
+
+  [b]F2[/b]  focus the host list        [b]F6[/b]  split pane
+  [b]F9[/b]  SFTP                       [b]F4[/b]  server resources
+  [b]Ctrl+F[/b]  find in scrollback     [b]Ctrl+B[/b]  broadcast typing
+
+Pick a host on the left, or type user@host in Quick connect."""
+
+
 class TermWraith(App):
     TITLE = "termwraith"
     SUB_TITLE = "SSH · telnet · serial"
@@ -722,7 +748,6 @@ class TermWraith(App):
     #hits { width: 100%; height: auto; max-height: 20; }
     #filter { margin-bottom: 1; border: round $primary-darken-2; }
     #filter:focus { border: round $accent; }
-    #saved { height: 14; background: $panel; padding: 0 1; }
     #quick { margin-top: 1; border: round $primary-darken-2; }
     #quick:focus { border: round $accent; }
     #hosts-list { height: 12; }
@@ -732,12 +757,42 @@ class TermWraith(App):
     .buttons Button:focus { text-style: bold reverse; }
     .row { height: auto; }
     .row Label { padding: 1 0 0 1; }
-    Picker, PasswordPrompt, HostKeyScreen, SessionForm, SettingsScreen, HostsScreen, TextPrompt { align: center middle; }
-    TabbedContent { height: 1fr; }
+    PasswordPrompt, HostKeyScreen, SessionForm, SettingsScreen, HostsScreen, TextPrompt { align: center middle; }
+    TabbedContent { width: 1fr; height: 1fr; }
     TabPane { padding: 0; height: 1fr; }
+    Screen { background: $background; }
+    #main { height: 1fr; }
+    #sidebar {
+        width: 36;
+        height: 100%;
+        background: $surface;
+        border-right: solid $panel;
+        border-subtitle-color: $accent;
+        padding: 0 1;
+    }
+    #side-title { color: $text-muted; text-style: bold; margin: 0 0 0 1; }
+    #sidebar Input { height: 1; border: none; padding: 0 1; background: $background; margin: 0 0 1 0; }
+    #sidebar Input:focus { background: $panel; }
+    #sidebar #saved { height: 1fr; background: $surface; padding: 0; scrollbar-size-vertical: 1; }
+    #sidebar #saved > .tree--guides { color: $panel; }
+    #sidebar #saved > .tree--cursor { background: $panel; color: $text; text-style: bold; }
+    #sidebar .buttons { margin-top: 0; }
+    #sidebar .buttons Button { width: auto; min-width: 0; margin: 0 1 0 0; padding: 0; background: $panel; color: $text; text-style: none; }
+    #sidebar .buttons Button.-primary { background: $primary; }
+    #sidebar .buttons Button.-error { background: $panel; color: $error; }
+    #sidebar #quick { margin: 1 0 0 0; }
+    #home-text { padding: 1 2; color: $text-muted; }
+    Tabs { background: $background; height: 1; }
+    Tab { color: $text-muted; background: $background; padding: 0 1; height: 1; }
+    Tab:hover { color: $text; background: $surface; }
+    Tab.-active { color: $text; background: $panel; text-style: bold; }
+    Underline { display: none; }
+    TabPane { background: $background; }
+    Footer { background: $surface; }
     .split { height: 1fr; }
     """
     BINDINGS = [
+        Binding("f1", "toggle_sidebar", "Sidebar"),
         Binding("f2", "connect", "Connect"),
         Binding("f3", "close_tab", "Close tab"),
         Binding("f6", "split", "Split"),
@@ -758,15 +813,19 @@ class TermWraith(App):
         self._tab_seq = 0
         self._master: str | None = None
         self.broadcast = False
+        self.register_theme(TERMIX)
         self.register_theme(DARCULA)
         for theme in TUI_THEMES:
             self.register_theme(theme)
         theme = load_config().theme
-        self.theme = theme if theme in self.available_themes else DARCULA.name
+        self.theme = theme if theme in self.available_themes else TERMIX.name
 
     def compose(self) -> ComposeResult:
-        yield Header(icon="◆")
-        yield TabbedContent()
+        with Horizontal(id="main"):
+            yield HostSidebar(id="sidebar")
+            with TabbedContent(initial="home"):
+                with TabPane("Home", id="home"):
+                    yield Static(HOME_TEXT, id="home-text")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -811,12 +870,25 @@ class TermWraith(App):
         self._master = master
         then(master)
 
-    def action_connect(self) -> None:
-        self.push_screen(Picker(), self._open)
+    def action_toggle_sidebar(self) -> None:
+        bar = self.query_one("#sidebar")
+        bar.display = not bar.display
+        if bar.display:
+            self.query_one("#filter", Input).focus()
+        else:
+            term = self._focused_term()
+            if term is not None:
+                term.focus()
 
-    def _open(self, target: Session | None) -> None:
-        if target is None:
-            return
+    def action_connect(self) -> None:
+        self.query_one("#sidebar").display = True
+        self.query_one("#filter", Input).focus()
+
+    @on(HostSidebar.Open)
+    def _open_host(self, event: HostSidebar.Open) -> None:
+        self._open(event.target)
+
+    def _open(self, target: Session) -> None:
         if target.vault or target.has_script or target.script:
             self.with_master(lambda master: self._launch(target, master))
             return
@@ -849,7 +921,7 @@ class TermWraith(App):
 
     async def action_close_tab(self) -> None:
         tabs = self.query_one(TabbedContent)
-        if tabs.active:
+        if tabs.active and tabs.active != "home":
             await tabs.remove_pane(tabs.active)
 
     def action_resources(self) -> None:
@@ -955,7 +1027,7 @@ class TermWraith(App):
 
     def action_broadcast(self) -> None:
         self.broadcast = not self.broadcast
-        self.sub_title = "broadcast ON" if self.broadcast else ""
+        self.query_one("#sidebar").border_subtitle = "broadcast ON" if self.broadcast else ""
 
     def action_cycle_tab(self, step: int) -> None:
         tabs = self.query_one(TabbedContent)

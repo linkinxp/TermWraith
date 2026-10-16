@@ -43,7 +43,7 @@ class Config:
     log_enabled: bool = False
     highlight_words: bool = True
     log_dir: str = str(Path.home() / ".local/state/termwraith/logs")
-    theme: str = "darcula"
+    theme: str = "termix"
     fg: str = ""
     bg: str = ""
     macros: list[dict] = field(default_factory=list)
